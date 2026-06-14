@@ -6,7 +6,6 @@ use std::io::{ErrorKind, Read};
 use std::os::fd::{AsRawFd, RawFd};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 pub const EV_KEY: u16 = 0x01;
 pub const EV_SYN: u16 = 0x00;
@@ -44,6 +43,7 @@ pub struct InputReader {
     pub path: PathBuf,
     grabbed: bool,
     can_grab: bool,
+    epoll_fd: RawFd,
 }
 
 impl InputReader {
@@ -64,12 +64,65 @@ impl InputReader {
                 (f, false)
             }
         };
+
+        let epoll_fd = match unsafe { libc::epoll_create1(libc::EPOLL_CLOEXEC) } {
+            fd if fd >= 0 => fd,
+            _ => {
+                let err = std::io::Error::last_os_error();
+                anyhow::bail!("epoll_create1 failed: {err}");
+            }
+        };
+        let mut ev = libc::epoll_event {
+            events: libc::EPOLLIN as u32,
+            u64: 0,
+        };
+        if unsafe { libc::epoll_ctl(epoll_fd, libc::EPOLL_CTL_ADD, file.as_raw_fd(), &mut ev) } < 0 {
+            let err = std::io::Error::last_os_error();
+            unsafe { libc::close(epoll_fd); }
+            anyhow::bail!("epoll_ctl add failed: {err}");
+        }
+
         Ok(Self {
             file,
             path: path.to_path_buf(),
             grabbed: false,
             can_grab,
+            epoll_fd,
         })
+    }
+
+    /// Block until data is available on the evdev fd, or timeout elapses.
+    /// Returns Ok(true) if data is available, Ok(false) on timeout.
+    pub fn wait_for_event(&self, timeout_ms: i32) -> Result<bool> {
+        let mut events = [libc::epoll_event { events: 0, u64: 0 }; 1];
+        loop {
+            let n = unsafe { libc::epoll_wait(self.epoll_fd, events.as_mut_ptr(), 1, timeout_ms) };
+            if n < 0 {
+                let err = std::io::Error::last_os_error();
+                if err.kind() == ErrorKind::Interrupted {
+                    continue;
+                }
+                return Err(err).context("epoll_wait failed");
+            }
+            return Ok(n > 0);
+        }
+    }
+
+    pub fn grabbed(&self) -> bool {
+        self.grabbed
+    }
+
+    /// Drain events after a SYN_DROPPED until we reach WouldBlock.
+    /// This prevents stale SYN_DROPPED events in the backlog from
+    /// triggering repeated reconciliations.
+    pub fn drain_events(&mut self) {
+        loop {
+            match self.read_event() {
+                Ok(Some(_)) => continue,
+                Ok(None) => break,
+                Err(_) => break,
+            }
+        }
     }
 
     pub fn set_grabbed(&mut self, grabbed: bool) -> Result<()> {
@@ -109,6 +162,7 @@ impl Drop for InputReader {
         if self.grabbed {
             let _ = ioctl_eviocgrab(self.file.as_raw_fd(), false);
         }
+        unsafe { libc::close(self.epoll_fd); }
     }
 }
 
@@ -261,10 +315,6 @@ fn ioctl_eviocgrab(fd: RawFd, grabbed: bool) -> Result<()> {
         return Err(std::io::Error::last_os_error()).context("EVIOCGRAB failed");
     }
     Ok(())
-}
-
-pub fn sleep_short() {
-    std::thread::sleep(Duration::from_millis(4));
 }
 
 const IOC_NRBITS: u64 = 8;

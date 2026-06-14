@@ -1,4 +1,4 @@
-use crate::evdev::{EV_KEY, EV_SYN, SYN_DROPPED, InputReader, discover_keyboards, sleep_short};
+use crate::evdev::{EV_KEY, EV_SYN, SYN_DROPPED, InputReader, discover_keyboards};
 use crate::ipc::{read_command, write_message};
 use crate::uinput::VirtualGamepad;
 use crate::SHUTDOWN;
@@ -697,10 +697,8 @@ fn spawn_hotplug_watcher(
 
 fn reader_loop(state: Arc<Mutex<DaemonState>>, device_id: DeviceId) {
     let path = {
-        let state = state.lock();
-        let Some(device) = state.devices.get(&device_id) else {
-            return;
-        };
+        let s = state.lock();
+        let Some(device) = s.devices.get(&device_id) else { return };
         PathBuf::from(&device.path)
     };
 
@@ -720,6 +718,34 @@ fn reader_loop(state: Arc<Mutex<DaemonState>>, device_id: DeviceId) {
         }
     };
 
+    // Read initial slot/locked state — then cache and refresh periodically
+    let current_slot = {
+        let s = state.lock();
+        let Some(device) = s.devices.get(&device_id) else { return };
+        let Some(slot) = device.assigned_slot else {
+            let _ = reader.set_grabbed(false);
+            return;
+        };
+        slot
+    };
+
+    // Initial grab
+    if let Err(err) = reader.set_grabbed(
+        state.lock().devices.get(&device_id)
+            .is_some_and(|d| d.locked)
+    ) {
+        let mut s = state.lock();
+        if let Some(device) = s.devices.get_mut(&device_id) {
+            device.last_error = Some(format!("{err:#}"));
+        }
+        if let Some(runtime_slot) = s.slots.get_mut(&current_slot) {
+            runtime_slot.status.lifecycle = SlotLifecycle::Bound;
+            runtime_slot.status.locked = false;
+            runtime_slot.status.last_error = Some(format!("{err:#}"));
+        }
+        s.log(LogLevel::Error, format!("Could not lock keyboard: {err:#}"));
+    }
+
     // Kill-switch: both Shift keys + Esc releases all locks
     const KEY_LEFTSHIFT: u16 = 42;
     const KEY_RIGHTSHIFT: u16 = 54;
@@ -731,35 +757,26 @@ fn reader_loop(state: Arc<Mutex<DaemonState>>, device_id: DeviceId) {
         if SHUTDOWN.load(Ordering::Acquire) {
             return;
         }
-        let (slot, should_lock) = {
-            let state = state.lock();
-            let Some(device) = state.devices.get(&device_id) else {
-                return;
-            };
-            let Some(slot) = device.assigned_slot else {
-                let _ = reader.set_grabbed(false);
-                return;
-            };
-            (slot, device.locked)
+
+        // Wait for events with 100ms timeout (for periodic state refresh).
+        // Instant wakeup on key press — no polling latency.
+        let available = match reader.wait_for_event(100) {
+            Ok(a) => a,
+            Err(_) => {
+                // Check if device still exists on epoll error
+                let s = state.lock();
+                if !s.devices.contains_key(&device_id) { return; }
+                continue;
+            }
         };
 
-        if let Err(err) = reader.set_grabbed(should_lock) {
-            let mut state = state.lock();
-            if let Some(device) = state.devices.get_mut(&device_id) {
-                device.last_error = Some(format!("{err:#}"));
-                device.locked = false;
-            }
-            if let Some(runtime_slot) = state.slots.get_mut(&slot) {
-                runtime_slot.status.lifecycle = SlotLifecycle::Bound;
-                runtime_slot.status.locked = false;
-                runtime_slot.status.last_error = Some(format!("{err:#}"));
-            }
-            state.log(LogLevel::Error, format!("Could not lock keyboard: {err:#}"));
-            continue;
-        }
+        if available {
+            // Read ALL buffered events without sleeping between them.
+            // This eliminates the 4ms inter-event latency that was causing
+            // bursty gamepad output and delayed responses.
+            while let Ok(Some(event)) = reader.read_event() {
+                if SHUTDOWN.load(Ordering::Acquire) { return; }
 
-        match reader.read_event() {
-            Ok(Some(event)) => {
                 if event.type_ == EV_KEY && event.value != 2 {
                     let pressed = event.value != 0;
                     match event.code {
@@ -771,25 +788,33 @@ fn reader_loop(state: Arc<Mutex<DaemonState>>, device_id: DeviceId) {
                         state.lock().release_all_locks();
                         return;
                     }
-                    handle_key_event(&state, slot, event.code, pressed);
+                    handle_key_event(&state, current_slot, event.code, pressed);
                 } else if event.type_ == EV_SYN && event.code == SYN_DROPPED {
-                    handle_syn_dropped(&state, &mut reader, slot);
+                    handle_syn_dropped(&state, &mut reader, current_slot);
+                    // Drain remaining events — prevents stale SYN_DROPPED
+                    // events in the backlog from triggering repeated
+                    // reconciliations and duplicate gamepad activations.
+                    reader.drain_events();
                 }
             }
-            Ok(None) => sleep_short(),
-            Err(err) => {
-                let mut state = state.lock();
-                if let Some(device) = state.devices.get_mut(&device_id) {
-                    device.connected = false;
-                    device.last_error = Some(format!("{err:#}"));
-                }
-                if let Some(runtime_slot) = state.slots.get_mut(&slot) {
-                    runtime_slot.status.lifecycle = SlotLifecycle::Error;
-                    runtime_slot.status.last_error = Some(format!("{err:#}"));
-                }
-                state.log(LogLevel::Warning, format!("Keyboard disconnected: {err:#}"));
-                return;
-            }
+        }
+
+        // Periodic refresh (every 100ms via epoll timeout):
+        // check slot assignment, lock state, and grab status.
+        // Eliminates the global mutex acquisition on idle iterations.
+        let mut s = state.lock();
+        let Some(device) = s.devices.get(&device_id) else { return };
+        let Some(slot) = device.assigned_slot else {
+            let _ = reader.set_grabbed(false);
+            return;
+        };
+        if slot != current_slot {
+            return;
+        }
+        if device.locked != reader.grabbed()
+            && let Err(err) = reader.set_grabbed(device.locked)
+        {
+            s.log(LogLevel::Error, format!("Could not lock keyboard: {err:#}"));
         }
     }
 }
