@@ -112,19 +112,6 @@ impl InputReader {
         self.grabbed
     }
 
-    /// Drain events after a SYN_DROPPED until we reach WouldBlock.
-    /// This prevents stale SYN_DROPPED events in the backlog from
-    /// triggering repeated reconciliations.
-    pub fn drain_events(&mut self) {
-        loop {
-            match self.read_event() {
-                Ok(Some(_)) => continue,
-                Ok(None) => break,
-                Err(_) => break,
-            }
-        }
-    }
-
     pub fn set_grabbed(&mut self, grabbed: bool) -> Result<()> {
         if !self.can_grab && grabbed {
             anyhow::bail!("no write permission on evdev device, cannot grab");

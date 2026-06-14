@@ -791,10 +791,6 @@ fn reader_loop(state: Arc<Mutex<DaemonState>>, device_id: DeviceId) {
                     handle_key_event(&state, current_slot, event.code, pressed);
                 } else if event.type_ == EV_SYN && event.code == SYN_DROPPED {
                     handle_syn_dropped(&state, &mut reader, current_slot);
-                    // Drain remaining events — prevents stale SYN_DROPPED
-                    // events in the backlog from triggering repeated
-                    // reconciliations and duplicate gamepad activations.
-                    reader.drain_events();
                 }
             }
         }
