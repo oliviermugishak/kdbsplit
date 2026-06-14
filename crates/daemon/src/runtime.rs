@@ -843,21 +843,24 @@ fn handle_key_event(
         }
 
         // Normal key handling
-        let binding = s
-            .config
-            .profiles
-            .get(&s.config.active_profile)
-            .and_then(|profile| profile.slots.get(&slot))
-            .and_then(|slot_profile| {
-                slot_profile.bindings.iter().find(|b| b.key.0 == key_code).cloned()
-            });
-
-        let Some(binding) = binding else { return };
         if !s.outputs.contains_key(&slot) { return; }
 
-        let current = {
+        let current = if pressed {
+            let binding = s
+                .config
+                .profiles
+                .get(&s.config.active_profile)
+                .and_then(|profile| profile.slots.get(&slot))
+                .and_then(|slot_profile| {
+                    slot_profile.bindings.iter().find(|b| b.key.0 == key_code).cloned()
+                });
+            let Some(binding) = binding else { return };
             let Some(runtime_slot) = s.slots.get_mut(&slot) else { return };
-            runtime_slot.apply_key(KeyCode(key_code), binding.action, pressed);
+            runtime_slot.key_down(KeyCode(key_code), binding.action);
+            runtime_slot.status.state
+        } else {
+            let Some(runtime_slot) = s.slots.get_mut(&slot) else { return };
+            runtime_slot.key_up(KeyCode(key_code));
             runtime_slot.status.state
         };
 

@@ -2,14 +2,14 @@ use kbdsplit_shared::{
     ControllerAction, ControllerSlot, ControllerState, Direction,
     KeyBinding, KeyCode, SlotLifecycle, SlotStatus, Stick, Trigger,
 };
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 const STICK_MAX: i16 = 32767;
 
 #[derive(Debug, Clone)]
 pub struct RuntimeSlot {
     pub status: SlotStatus,
-    held_keys: BTreeSet<KeyCode>,
+    held_keys: BTreeMap<KeyCode, ControllerAction>,
     action_refcount: HashMap<ControllerAction, u32>,
 }
 
@@ -17,7 +17,7 @@ impl RuntimeSlot {
     pub fn new(slot: ControllerSlot) -> Self {
         Self {
             status: SlotStatus::empty(slot),
-            held_keys: BTreeSet::new(),
+            held_keys: BTreeMap::new(),
             action_refcount: HashMap::new(),
         }
     }
@@ -27,43 +27,35 @@ impl RuntimeSlot {
     }
 
     pub fn set_bindings(&mut self, bindings: Vec<KeyBinding>) {
+        self.rebind_held_keys(&bindings);
         self.status.bindings = bindings;
     }
 
-    /// Apply a key press/release with per-key refcounting.
-    /// Returns true if the key state actually changed.
-    pub fn apply_key(&mut self, key_code: KeyCode, action: ControllerAction, pressed: bool) -> bool {
-        if pressed {
-            if !self.held_keys.insert(key_code) {
-                return false;
-            }
-            let rc = self.action_refcount.entry(action).or_insert(0);
-            let was_inactive = *rc == 0;
-            *rc += 1;
-            if was_inactive {
-                apply_action_delta(&mut self.status.state, action, true);
-            }
-        } else {
-            if !self.held_keys.remove(&key_code) {
-                return false;
-            }
-            if let std::collections::hash_map::Entry::Occupied(mut entry) =
-                self.action_refcount.entry(action)
-            {
-                let rc = entry.get_mut();
-                *rc = rc.saturating_sub(1);
-                if *rc == 0 {
-                    entry.remove();
-                    apply_action_delta(&mut self.status.state, action, false);
-                }
-            }
+    /// Called when a key is pressed. `action` comes from the current binding lookup.
+    /// Returns true if the key was not already held.
+    pub fn key_down(&mut self, key_code: KeyCode, action: ControllerAction) -> bool {
+        if self.held_keys.contains_key(&key_code) {
+            return false;
         }
+        self.held_keys.insert(key_code, action);
+        increment_action(&mut self.action_refcount, &mut self.status.state, action);
+        self.update_lifecycle();
+        true
+    }
+
+    /// Called when a key is released. Uses the action stored at press time,
+    /// so it is correct even if bindings changed since the key was pressed.
+    /// Returns true if the key was actually held.
+    pub fn key_up(&mut self, key_code: KeyCode) -> bool {
+        let Some(stored_action) = self.held_keys.remove(&key_code) else {
+            return false;
+        };
+        decrement_action(&mut self.action_refcount, &mut self.status.state, stored_action);
         self.update_lifecycle();
         true
     }
 
     /// Directly apply an action without key tracking (used by test injection).
-    /// This does not update refcounts — use only for debug purposes.
     pub fn apply_action(&mut self, action: ControllerAction, pressed: bool) {
         apply_action_delta(&mut self.status.state, action, pressed);
         if self.status.device_id.is_some() && self.status.lifecycle != SlotLifecycle::Error {
@@ -80,9 +72,7 @@ impl RuntimeSlot {
     }
 
     /// Reconcile held keys against a kernel evdev key bitmap.
-    /// Works at key level: diffs physical keys against our held_keys,
-    /// then processes each diff through apply_key for correct refcounting.
-    /// Returns true if any state changed and re-emit is needed.
+    /// Works at key level using key_down/key_up for correct refcounting.
     pub fn reconcile_from_bitmap(&mut self, bitmap: &[u8], bindings: &[KeyBinding]) -> bool {
         let mut physical: BTreeSet<KeyCode> = BTreeSet::new();
         for binding in bindings {
@@ -92,38 +82,23 @@ impl RuntimeSlot {
             }
         }
 
-        if self.held_keys == physical {
+        let held_set: BTreeSet<KeyCode> = self.held_keys.keys().copied().collect();
+        if held_set == physical {
             return false;
         }
 
-        // Collect diffs first to avoid borrow conflicts with self.apply_key
-        let to_release: Vec<(KeyCode, ControllerAction)> = self
-            .held_keys
-            .difference(&physical)
-            .filter_map(|key_code| {
-                bindings
-                    .iter()
-                    .find(|b| &b.key == key_code)
-                    .map(|b| (b.key, b.action))
-            })
-            .collect();
-        let to_press: Vec<(KeyCode, ControllerAction)> = physical
-            .difference(&self.held_keys)
-            .filter_map(|key_code| {
-                bindings
-                    .iter()
-                    .find(|b| &b.key == key_code)
-                    .map(|b| (b.key, b.action))
-            })
-            .collect();
-
         let mut changed = false;
-        for (key_code, action) in &to_release {
-            changed |= self.apply_key(*key_code, *action, false);
+
+        for key_code in held_set.difference(&physical) {
+            changed |= self.key_up(*key_code);
         }
-        for (key_code, action) in &to_press {
-            changed |= self.apply_key(*key_code, *action, true);
+
+        for key_code in physical.difference(&held_set) {
+            if let Some(binding) = bindings.iter().find(|b| &b.key == key_code) {
+                changed |= self.key_down(*key_code, binding.action);
+            }
         }
+
         changed
     }
 
@@ -131,6 +106,28 @@ impl RuntimeSlot {
         self.held_keys.clear();
         self.action_refcount.clear();
         self.status.state = ControllerState::default();
+    }
+
+    fn rebind_held_keys(&mut self, new_bindings: &[KeyBinding]) {
+        let current: Vec<(KeyCode, ControllerAction)> =
+            self.held_keys.iter().map(|(k, a)| (*k, *a)).collect();
+
+        for (key_code, old_action) in &current {
+            match new_bindings.iter().find(|b| b.key == *key_code) {
+                Some(binding) if binding.action != *old_action => {
+                    decrement_action(&mut self.action_refcount, &mut self.status.state, *old_action);
+                    increment_action(&mut self.action_refcount, &mut self.status.state, binding.action);
+                    self.held_keys.insert(*key_code, binding.action);
+                }
+                None => {
+                    self.held_keys.remove(key_code);
+                    decrement_action(&mut self.action_refcount, &mut self.status.state, *old_action);
+                }
+                _ => {}
+            }
+        }
+
+        self.update_lifecycle();
     }
 
     fn update_lifecycle(&mut self) {
@@ -144,6 +141,33 @@ impl RuntimeSlot {
             } else {
                 SlotLifecycle::Active
             };
+        }
+    }
+}
+
+fn increment_action(
+    refcount: &mut HashMap<ControllerAction, u32>,
+    state: &mut ControllerState,
+    action: ControllerAction,
+) {
+    let rc = refcount.entry(action).or_insert(0);
+    if *rc == 0 {
+        apply_action_delta(state, action, true);
+    }
+    *rc += 1;
+}
+
+fn decrement_action(
+    refcount: &mut HashMap<ControllerAction, u32>,
+    state: &mut ControllerState,
+    action: ControllerAction,
+) {
+    if let std::collections::hash_map::Entry::Occupied(mut entry) = refcount.entry(action) {
+        let rc = entry.get_mut();
+        *rc = rc.saturating_sub(1);
+        if *rc == 0 {
+            entry.remove();
+            apply_action_delta(state, action, false);
         }
     }
 }
