@@ -221,7 +221,7 @@ impl Daemon {
                 let current = {
                     let runtime_slot = state.slots.get_mut(&slot).context("slot does not exist")?;
                     runtime_slot.apply_action(action, pressed);
-                    runtime_slot.status.state.clone()
+                    runtime_slot.status.state
                 };
                 if let Some(output) = state.outputs.get_mut(&slot) {
                     output.emit_state(&current)?;
@@ -858,7 +858,7 @@ fn handle_key_event(
             return;
         };
         runtime_slot.apply_action(binding.action, pressed);
-        runtime_slot.status.state.clone()
+        runtime_slot.status.state
     };
     if let Err(err) = s.outputs.get_mut(&slot).unwrap().emit_state(&current)
     {

@@ -91,11 +91,30 @@ struct InputEvent {
     value: i32,
 }
 
+const MAX_BATCH_EVENTS: usize = 24;
+const EVENT_SIZE: usize = std::mem::size_of::<InputEvent>();
+
 pub struct VirtualGamepad {
     file: File,
     last: ControllerState,
-    last_hat_x: i32,
-    last_hat_y: i32,
+}
+
+fn hat_from_buttons(buttons: u16) -> (i32, i32) {
+    let left = buttons & GamepadButton::DpadLeft.bit() != 0;
+    let right = buttons & GamepadButton::DpadRight.bit() != 0;
+    let up = buttons & GamepadButton::DpadUp.bit() != 0;
+    let down = buttons & GamepadButton::DpadDown.bit() != 0;
+    let x = match (left, right) {
+        (true, false) => -1,
+        (false, true) => 1,
+        _ => 0,
+    };
+    let y = match (up, down) {
+        (true, false) => -1,
+        (false, true) => 1,
+        _ => 0,
+    };
+    (x, y)
 }
 
 impl VirtualGamepad {
@@ -148,104 +167,78 @@ impl VirtualGamepad {
         Ok(Self {
             file,
             last: ControllerState::default(),
-            last_hat_x: 0,
-            last_hat_y: 0,
         })
     }
 
+    /// Emit all state changes in a single batched write to /dev/uinput.
     pub fn emit_state(&mut self, state: &ControllerState) -> Result<()> {
+        let mut batch: [u8; MAX_BATCH_EVENTS * EVENT_SIZE] = [0; MAX_BATCH_EVENTS * EVENT_SIZE];
+        let mut count = 0;
+
+        macro_rules! push_event {
+            ($type_:expr, $code:expr, $value:expr) => {{
+                let ev = InputEvent {
+                    time: libc::timeval { tv_sec: 0, tv_usec: 0 },
+                    type_: $type_,
+                    code: $code,
+                    value: $value,
+                };
+                let src = unsafe {
+                    std::slice::from_raw_parts(
+                        (&ev as *const InputEvent).cast::<u8>(),
+                        EVENT_SIZE,
+                    )
+                };
+                let offset = count * EVENT_SIZE;
+                batch[offset..offset + EVENT_SIZE].copy_from_slice(src);
+                count += 1;
+            }};
+        }
+
+        // Buttons
         for button in GamepadButton::ALL {
-            let previous = self.last.buttons.get(&button).copied().unwrap_or(false);
-            let current = state.buttons.get(&button).copied().unwrap_or(false);
-            if previous != current {
-                self.emit(EV_KEY, button_code(button), i32::from(current))?;
+            let prev = self.last.button_pressed(button);
+            let curr = state.button_pressed(button);
+            if prev != curr {
+                push_event!(EV_KEY, button_code(button), i32::from(curr));
             }
         }
-        let hat_x = match (
-            state.buttons.get(&GamepadButton::DpadLeft).copied().unwrap_or(false),
-            state.buttons.get(&GamepadButton::DpadRight).copied().unwrap_or(false),
-        ) {
-            (true, false) => -1,
-            (false, true) => 1,
-            _ => 0,
-        };
-        let hat_y = match (
-            state.buttons.get(&GamepadButton::DpadUp).copied().unwrap_or(false),
-            state.buttons.get(&GamepadButton::DpadDown).copied().unwrap_or(false),
-        ) {
-            (true, false) => -1,
-            (false, true) => 1,
-            _ => 0,
-        };
-        if hat_x != self.last_hat_x {
-            self.emit(EV_ABS, ABS_HAT0X, hat_x)?;
-            self.last_hat_x = hat_x;
-        }
-        if hat_y != self.last_hat_y {
-            self.emit(EV_ABS, ABS_HAT0Y, hat_y)?;
-            self.last_hat_y = hat_y;
-        }
-        self.emit_axis_if_changed(
-            ABS_X,
-            self.last.axes.left_x as i32,
-            state.axes.left_x as i32,
-        )?;
-        self.emit_axis_if_changed(
-            ABS_Y,
-            self.last.axes.left_y as i32,
-            state.axes.left_y as i32,
-        )?;
-        self.emit_axis_if_changed(
-            ABS_RX,
-            self.last.axes.right_x as i32,
-            state.axes.right_x as i32,
-        )?;
-        self.emit_axis_if_changed(
-            ABS_RY,
-            self.last.axes.right_y as i32,
-            state.axes.right_y as i32,
-        )?;
-        self.emit_axis_if_changed(
-            ABS_Z,
-            self.last.axes.left_trigger as i32,
-            state.axes.left_trigger as i32,
-        )?;
-        self.emit_axis_if_changed(
-            ABS_RZ,
-            self.last.axes.right_trigger as i32,
-            state.axes.right_trigger as i32,
-        )?;
-        self.emit(EV_SYN, SYN_REPORT, 0)?;
-        self.last = state.clone();
-        Ok(())
-    }
 
-    fn emit_axis_if_changed(&mut self, code: u16, previous: i32, current: i32) -> Result<()> {
-        if previous != current {
-            self.emit(EV_ABS, code, current)?;
+        // Hat (derived from D-pad buttons)
+        let (prev_hx, prev_hy) = hat_from_buttons(self.last.buttons);
+        let (cur_hx, cur_hy) = hat_from_buttons(state.buttons);
+        if cur_hx != prev_hx {
+            push_event!(EV_ABS, ABS_HAT0X, cur_hx);
         }
-        Ok(())
-    }
+        if cur_hy != prev_hy {
+            push_event!(EV_ABS, ABS_HAT0Y, cur_hy);
+        }
 
-    fn emit(&mut self, type_: u16, code: u16, value: i32) -> Result<()> {
-        let event = InputEvent {
-            time: libc::timeval {
-                tv_sec: 0,
-                tv_usec: 0,
-            },
-            type_,
-            code,
-            value,
-        };
-        let bytes = unsafe {
-            std::slice::from_raw_parts(
-                (&event as *const InputEvent).cast::<u8>(),
-                std::mem::size_of::<InputEvent>(),
-            )
-        };
-        self.file
-            .write_all(bytes)
-            .context("failed to emit uinput event")
+        // Axes
+        macro_rules! push_axis_if {
+            ($code:expr, $prev:expr, $cur:expr) => {
+                if $prev != $cur {
+                    push_event!(EV_ABS, $code, $cur);
+                }
+            };
+        }
+        push_axis_if!(ABS_X, self.last.axes.left_x as i32, state.axes.left_x as i32);
+        push_axis_if!(ABS_Y, self.last.axes.left_y as i32, state.axes.left_y as i32);
+        push_axis_if!(ABS_RX, self.last.axes.right_x as i32, state.axes.right_x as i32);
+        push_axis_if!(ABS_RY, self.last.axes.right_y as i32, state.axes.right_y as i32);
+        push_axis_if!(ABS_Z, self.last.axes.left_trigger as i32, state.axes.left_trigger as i32);
+        push_axis_if!(ABS_RZ, self.last.axes.right_trigger as i32, state.axes.right_trigger as i32);
+
+        if count > 0 {
+            push_event!(EV_SYN, SYN_REPORT, 0);
+            let len = count * EVENT_SIZE;
+            self.file
+                .write_all(&batch[..len])
+                .context("failed to emit batched uinput events")?;
+        }
+
+        self.last = *state;
+        Ok(())
     }
 }
 

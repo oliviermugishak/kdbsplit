@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 use std::fmt;
 
 pub const MAX_SLOTS: usize = 4;
@@ -168,6 +167,10 @@ impl GamepadButton {
         GamepadButton::DpadLeft,
         GamepadButton::DpadRight,
     ];
+
+    pub fn bit(self) -> u16 {
+        1 << (self as u8)
+    }
 }
 
 impl fmt::Display for GamepadButton {
@@ -254,7 +257,7 @@ pub struct KeyBinding {
     pub action: ControllerAction,
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ControllerAxes {
     pub left_x: i16,
     pub left_y: i16,
@@ -264,20 +267,22 @@ pub struct ControllerAxes {
     pub right_trigger: u8,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ControllerState {
-    pub buttons: BTreeMap<GamepadButton, bool>,
+    pub buttons: u16,
     pub axes: ControllerAxes,
 }
 
-impl Default for ControllerState {
-    fn default() -> Self {
-        Self {
-            buttons: GamepadButton::ALL
-                .into_iter()
-                .map(|button| (button, false))
-                .collect(),
-            axes: ControllerAxes::default(),
+impl ControllerState {
+    pub fn button_pressed(&self, button: GamepadButton) -> bool {
+        self.buttons & button.bit() != 0
+    }
+
+    pub fn set_button(&mut self, button: GamepadButton, pressed: bool) {
+        if pressed {
+            self.buttons |= button.bit();
+        } else {
+            self.buttons &= !button.bit();
         }
     }
 }
@@ -386,8 +391,9 @@ mod tests {
     #[test]
     fn test_controller_state_default() {
         let state = ControllerState::default();
+        assert_eq!(state.buttons, 0);
         for button in GamepadButton::ALL {
-            assert!(!state.buttons.get(&button).copied().unwrap_or(true));
+            assert!(!state.button_pressed(button));
         }
         assert_eq!(state.axes.left_x, 0);
         assert_eq!(state.axes.left_y, 0);

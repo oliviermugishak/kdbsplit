@@ -592,7 +592,7 @@ impl KbdSplitApp {
                 GamepadButton::Select,
             ] {
                 if ui.button(button.to_string()).clicked() {
-                    let pressed = !slot.state.buttons.get(&button).copied().unwrap_or(false);
+                    let pressed = !slot.state.button_pressed(button);
                     self.send(ClientCommand::InjectTestAction {
                         slot: slot.slot,
                         action: ControllerAction::Button(button),
@@ -799,7 +799,7 @@ fn draw_controller(painter: &Painter, rect: Rect, state: &ControllerState) {
             Vec2::new(width * 0.26, height * 0.12),
         ),
         "LB",
-        state.buttons.get(&GamepadButton::LeftShoulder).copied().unwrap_or(false),
+        state.button_pressed(GamepadButton::LeftShoulder),
         active,
     );
     draw_shoulder(
@@ -809,7 +809,7 @@ fn draw_controller(painter: &Painter, rect: Rect, state: &ControllerState) {
             Vec2::new(width * 0.26, height * 0.12),
         ),
         "RB",
-        state.buttons.get(&GamepadButton::RightShoulder).copied().unwrap_or(false),
+        state.button_pressed(GamepadButton::RightShoulder),
         active,
     );
 
@@ -844,7 +844,7 @@ fn draw_button(
     button: GamepadButton,
     active: Color32,
 ) {
-    let pressed = state.buttons.get(&button).copied().unwrap_or(false);
+    let pressed = state.button_pressed(button);
     let fill = if pressed {
         active
     } else {
@@ -873,7 +873,7 @@ fn draw_small_button(
     button: GamepadButton,
     active: Color32,
 ) {
-    let pressed = state.buttons.get(&button).copied().unwrap_or(false);
+    let pressed = state.button_pressed(button);
     let fill = if pressed {
         active
     } else {
@@ -937,7 +937,7 @@ fn draw_dpad(
     ];
     for (offset, button) in parts {
         let rect = Rect::from_center_size(center + offset, Vec2::new(size * 0.9, size * 0.9));
-        let pressed = state.buttons.get(&button).copied().unwrap_or(false);
+        let pressed = state.button_pressed(button);
         painter.rect(
             rect,
             5.0,

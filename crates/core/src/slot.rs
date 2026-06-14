@@ -1,8 +1,8 @@
 use kbdsplit_shared::{
-    ControllerAction, ControllerAxes, ControllerSlot, ControllerState, Direction, GamepadButton,
+    ControllerAction, ControllerSlot, ControllerState, Direction,
     KeyBinding, SlotLifecycle, SlotStatus, Stick, Trigger,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 const STICK_MAX: i16 = 32767;
 
@@ -29,12 +29,11 @@ impl RuntimeSlot {
     }
 
     pub fn apply_action(&mut self, action: ControllerAction, pressed: bool) {
-        if pressed {
-            self.held_actions.insert(action);
-        } else {
+        self.held_actions.insert(action);
+        if !pressed {
             self.held_actions.remove(&action);
         }
-        self.status.state = state_from_actions(&self.held_actions);
+        apply_action_delta(&mut self.status.state, action, pressed);
         if self.status.device_id.is_some() && self.status.lifecycle != SlotLifecycle::Error {
             self.status.lifecycle = if self.held_actions.is_empty() {
                 if self.status.locked {
@@ -48,48 +47,57 @@ impl RuntimeSlot {
         }
     }
 
+    pub fn reset_state_from_actions(&mut self) {
+        self.status.state = state_from_actions(&self.held_actions);
+    }
+
     pub fn clear_inputs(&mut self) {
         self.held_actions.clear();
         self.status.state = ControllerState::default();
     }
 }
 
-pub fn state_from_actions(actions: &BTreeSet<ControllerAction>) -> ControllerState {
-    let mut buttons: BTreeMap<GamepadButton, bool> = GamepadButton::ALL
-        .into_iter()
-        .map(|button| (button, false))
-        .collect();
-    let mut axes = ControllerAxes::default();
-
-    for action in actions {
-        match action {
-            ControllerAction::Button(button) => {
-                buttons.insert(*button, true);
-            }
-            ControllerAction::Trigger(Trigger::Left) => axes.left_trigger = u8::MAX,
-            ControllerAction::Trigger(Trigger::Right) => axes.right_trigger = u8::MAX,
-            ControllerAction::Stick { stick, direction } => {
-                let (x, y) = match direction {
-                    Direction::Up => (0, -STICK_MAX),
-                    Direction::Down => (0, STICK_MAX),
-                    Direction::Left => (-STICK_MAX, 0),
-                    Direction::Right => (STICK_MAX, 0),
-                };
-                match stick {
-                    Stick::Left => {
-                        axes.left_x = axes.left_x.saturating_add(x);
-                        axes.left_y = axes.left_y.saturating_add(y);
-                    }
-                    Stick::Right => {
-                        axes.right_x = axes.right_x.saturating_add(x);
-                        axes.right_y = axes.right_y.saturating_add(y);
-                    }
+fn apply_action_delta(state: &mut ControllerState, action: ControllerAction, pressed: bool) {
+    match action {
+        ControllerAction::Button(btn) => {
+            state.set_button(btn, pressed);
+        }
+        ControllerAction::Trigger(Trigger::Left) => {
+            let delta: i8 = if pressed { 1 } else { -1 };
+            state.axes.left_trigger = state.axes.left_trigger.wrapping_add_signed(delta);
+        }
+        ControllerAction::Trigger(Trigger::Right) => {
+            let delta: i8 = if pressed { 1 } else { -1 };
+            state.axes.right_trigger = state.axes.right_trigger.wrapping_add_signed(delta);
+        }
+        ControllerAction::Stick { stick, direction } => {
+            let delta: i16 = if pressed { 1 } else { -1 };
+            let (dx, dy) = match direction {
+                Direction::Up => (0i16, -STICK_MAX * delta),
+                Direction::Down => (0i16, STICK_MAX * delta),
+                Direction::Left => (-STICK_MAX * delta, 0i16),
+                Direction::Right => (STICK_MAX * delta, 0i16),
+            };
+            match stick {
+                Stick::Left => {
+                    state.axes.left_x = state.axes.left_x.saturating_add(dx);
+                    state.axes.left_y = state.axes.left_y.saturating_add(dy);
+                }
+                Stick::Right => {
+                    state.axes.right_x = state.axes.right_x.saturating_add(dx);
+                    state.axes.right_y = state.axes.right_y.saturating_add(dy);
                 }
             }
         }
     }
+}
 
-    ControllerState { buttons, axes }
+pub fn state_from_actions(actions: &BTreeSet<ControllerAction>) -> ControllerState {
+    let mut state = ControllerState::default();
+    for action in actions {
+        apply_action_delta(&mut state, *action, true);
+    }
+    state
 }
 
 #[cfg(test)]
