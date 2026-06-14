@@ -1,0 +1,6 @@
+/target
+profiles/
+*.swp
+*.swo
+*~
+.DS_Store

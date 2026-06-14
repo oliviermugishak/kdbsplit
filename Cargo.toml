@@ -1,0 +1,28 @@
+[workspace]
+members = [
+  "crates/shared",
+  "crates/core",
+  "crates/daemon",
+  "crates/gui",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+repository = "https://example.invalid/kbdsplit"
+rust-version = "1.96"
+
+[workspace.dependencies]
+anyhow = "1.0.102"
+directories = "6.0.0"
+eframe = { version = "0.33.2", default-features = true, features = ["glow"] }
+egui = "0.33.2"
+libc = "0.2.186"
+parking_lot = "0.12.5"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+thiserror = "2.0.18"
+toml = "0.9.12"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"] }

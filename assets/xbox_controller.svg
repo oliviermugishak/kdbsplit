@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="400" height="200" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- Xbox Controller Outline - Xbox One/Series X|S style -->
+  <defs>
+    <linearGradient id="bodyGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#4a5260;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#323842;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Main body - Xbox controller outline -->
+  <path d="M100,20 
+           C80,20 60,40 50,60 
+           C40,80 40,100 50,120 
+           C60,140 80,160 100,160 
+           L120,180 
+           C140,180 160,160 160,140 
+           L180,140 
+           C200,160 220,180 240,180 
+           L260,160 
+           C260,140 280,120 280,100 
+           C280,80 280,60 260,40 
+           C240,20 220,20 200,20 
+           Z" 
+        fill="url(#bodyGrad)" stroke="#6b7280" stroke-width="2"/>
+  
+  <!-- Left grip/pad area -->
+  <ellipse cx="120" cy="110" rx="35" ry="45" fill="#2a2f3a" stroke="#5a606d" stroke-width="1"/>
+  
+  <!-- Right grip/pad area -->
+  <ellipse cx="280" cy="110" rx="35" ry="45" fill="#2a2f3a" stroke="#5a606d" stroke-width="1"/>
+  
+  <!-- Center section -->
+  <rect x="140" y="50" width="120" height="80" rx="15" fill="#3a404d" stroke="#5a606d" stroke-width="1"/>
+  
+  <!-- Left stick base -->
+  <circle cx="120" cy="80" r="22" fill="#1e2228" stroke="#788090" stroke-width="1"/>
+  
+  <!-- Right stick base -->
+  <circle cx="280" cy="80" r="22" fill="#1e2228" stroke="#788090" stroke-width="1"/>
+  
+  <!-- D-Pad -->
+  <g transform="translate(120,130)">
+    <rect x="-12" y="-2" width="24" height="4" rx="2" fill="#5a606e"/>
+    <rect x="-2" y="-12" width="4" height="24" rx="2" fill="#5a606e"/>
+    <rect x="-14" y="-14" width="7" height="7" rx="1" fill="#3a404d"/>
+    <rect x="-2" y="-14" width="7" height="7" rx="1" fill="#3a404d"/>
+    <rect x="5" y="-14" width="7" height="7" rx="1" fill="#3a404d"/>
+    <rect x="-14" y="7" width="7" height="7" rx="1" fill="#3a404d"/>
+    <rect x="-2" y="7" width="7" height="7" rx="1" fill="#3a404d"/>
+    <rect x="5" y="7" width="7" height="7" rx="1" fill="#3a404d"/>
+  </g>
+  
+  <!-- Face buttons - Y button (triangle) -->
+  <polygon points="280,160 292,175 268,175" fill="#3a404d" stroke="#5a606e" stroke-width="1"/>
+  
+  <!-- B button (circle) -->
+  <circle cx="306" cy="175" r="14" fill="#3a404d" stroke="#5a606e" stroke-width="1"/>
+  
+  <!-- A button (circle) -->
+  <circle cx="280" cy="195" r="14" fill="#3a404d" stroke="#5a606e" stroke-width="1"/>
+  
+  <!-- X button (circle) -->
+  <circle cx="254" cy="175" r="14" fill="#3a404d" stroke="#5a606e" stroke-width="1"/>
+  
+  <!-- Start button -->
+  <rect x="170" y="58" width="24" height="12" rx="6" fill="#5a606e"/>
+  
+  <!-- Back button -->
+  <rect x="150" y="58" width="24" height="12" rx="6" fill="#5a606e"/>
+  
+  <!-- Guide/Xbox button (circle) -->
+  <circle cx="200" cy="80" r="12" fill="#107c10" stroke="#5a606e" stroke-width="1"/>
+  
+  <!-- Left shoulder -->
+  <rect x="82" y="28" width="56" height="18" rx="9" fill="#3a404d" stroke="#5a606e" stroke-width="1"/>
+  
+  <!-- Right shoulder -->
+  <rect x="182" y="28" width="56" height="18" rx="9" fill="#3a404d" stroke="#5a606e" stroke-width="1"/>
+  
+  <!-- Left trigger -->
+  <rect x="95" y="5" width="40" height="22" rx="11" fill="#2a2f3a" stroke="#5a606e" stroke-width="1"/>
+  
+  <!-- Right trigger -->
+  <rect x="195" y="5" width="40" height="22" rx="11" fill="#2a2f3a" stroke="#5a606e" stroke-width="1"/>
+  
+  <!-- Left stick click indicator -->
+  <circle cx="120" cy="80" r="6" fill="#5a606e" opacity="0.5"/>
+  
+  <!-- Right stick click indicator -->
+  <circle cx="280" cy="80" r="6" fill="#5a606e" opacity="0.5"/>
+</svg>

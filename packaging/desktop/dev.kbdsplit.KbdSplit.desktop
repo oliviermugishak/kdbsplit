@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=KbdSplit
+Comment=Split keyboards into virtual Xbox controllers
+Exec=kbdsplit-gui
+Terminal=false
+Categories=Utility;Game;

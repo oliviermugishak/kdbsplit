@@ -1,0 +1,11 @@
+[Unit]
+Description=KbdSplit input daemon
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/kbdsplitd
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
