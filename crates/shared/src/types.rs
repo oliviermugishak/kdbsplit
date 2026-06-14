@@ -126,7 +126,6 @@ pub enum SlotLifecycle {
     Bound,
     Locked,
     Active,
-    Paused,
     Error,
 }
 
@@ -349,7 +348,6 @@ pub struct BindingCapture {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CaptureStatus {
     Waiting { slot: ControllerSlot, action: ControllerAction },
-    Captured { slot: ControllerSlot, action: ControllerAction, key: KeyCode, label: String },
     None,
 }
 

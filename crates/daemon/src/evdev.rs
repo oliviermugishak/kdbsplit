@@ -9,9 +9,11 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 pub const EV_KEY: u16 = 0x01;
+pub const EV_SYN: u16 = 0x00;
+pub const SYN_DROPPED: u16 = 3;
 
-const KEY_MAX: usize = 0x2ff;
-const KEY_CNT: usize = KEY_MAX + 1;
+pub const KEY_MAX: usize = 0x2ff;
+pub const KEY_CNT: usize = KEY_MAX + 1;
 const KEY_A: usize = 30;
 const KEY_Z: usize = 44;
 const KEY_1: usize = 2;
@@ -80,6 +82,12 @@ impl InputReader {
         ioctl_eviocgrab(self.file.as_raw_fd(), grabbed)?;
         self.grabbed = grabbed;
         Ok(())
+    }
+
+    pub fn read_key_bitmap(&mut self) -> Result<[u8; 96]> {
+        let mut bits = [0u8; KEY_CNT.div_ceil(8)];
+        ioctl_eviocgkey(self.file.as_raw_fd(), &mut bits)?;
+        Ok(bits)
     }
 
     pub fn read_event(&mut self) -> Result<Option<InputEvent>> {
@@ -206,7 +214,7 @@ fn has_keyboard_keys(fd: RawFd) -> Result<bool> {
     Ok(has_letters && has_numbers && bit_is_set(&bits, KEY_SPACE) && bit_is_set(&bits, KEY_ENTER))
 }
 
-fn bit_is_set(bits: &[u8], bit: usize) -> bool {
+pub fn bit_is_set(bits: &[u8], bit: usize) -> bool {
     bits.get(bit / 8)
         .is_some_and(|byte| byte & (1 << (bit % 8)) != 0)
 }
@@ -234,6 +242,14 @@ fn ioctl_eviocgbit(fd: RawFd, ev: u16, buffer: &mut [u8]) -> Result<()> {
     let rc = unsafe { libc::ioctl(fd, eviocgbit(ev, buffer.len()), buffer.as_mut_ptr()) };
     if rc < 0 {
         return Err(std::io::Error::last_os_error()).context("EVIOCGBIT failed");
+    }
+    Ok(())
+}
+
+fn ioctl_eviocgkey(fd: RawFd, buffer: &mut [u8]) -> Result<()> {
+    let rc = unsafe { libc::ioctl(fd, eviocgkey(buffer.len()), buffer.as_mut_ptr()) };
+    if rc < 0 {
+        return Err(std::io::Error::last_os_error()).context("EVIOCGKEY failed");
     }
     Ok(())
 }
@@ -296,6 +312,10 @@ const fn eviocgbit(ev: u16, len: usize) -> libc::c_ulong {
 
 const fn eviocg_string(nr: u8, len: usize) -> libc::c_ulong {
     ioc(IOC_READ, b'E' as u64, nr as u64, len as u64)
+}
+
+const fn eviocgkey(len: usize) -> libc::c_ulong {
+    ioc(IOC_READ, b'E' as u64, 0x18, len as u64)
 }
 
 const fn eviocgrab() -> libc::c_ulong {

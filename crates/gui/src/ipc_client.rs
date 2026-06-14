@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use kbdsplit_shared::{ClientCommand, ServerMessage, decode_message, encode_message};
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
@@ -46,16 +47,18 @@ impl IpcClient {
         decode_message(&payload).context("failed to decode response")
     }
 
-    pub fn ensure_daemon_started(&mut self) -> Result<()> {
+    /// Returns `Ok(true)` if daemon is running (just started or already running),
+    /// `Ok(false)` if daemon binary was not found, `Err` on spawn failure.
+    pub fn ensure_daemon_started(&mut self) -> Result<bool> {
         if self
             .daemon
             .as_mut()
             .is_some_and(|child| child.try_wait().ok().flatten().is_none())
         {
-            return Ok(());
+            return Ok(true);
         }
         let Some(path) = daemon_path() else {
-            anyhow::bail!("kbdsplitd was not found next to the GUI binary");
+            return Ok(false);
         };
         let child = Command::new(&path)
             .arg("--socket")
@@ -66,7 +69,7 @@ impl IpcClient {
             .spawn()
             .with_context(|| format!("failed to start {}", path.display()))?;
         self.daemon = Some(child);
-        Ok(())
+        Ok(true)
     }
 }
 
@@ -84,4 +87,7 @@ fn daemon_path() -> Option<PathBuf> {
 
 fn is_executable_file(path: &Path) -> bool {
     path.is_file()
+        && std::fs::metadata(path)
+            .ok()
+            .is_some_and(|m| m.permissions().mode() & 0o111 != 0)
 }

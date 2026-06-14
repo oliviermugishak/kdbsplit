@@ -17,7 +17,7 @@ pub struct KbdSplitApp {
     selected_slot: ControllerSlot,
     last_poll: Instant,
     connection_error: Option<String>,
-    daemon_start_attempted: bool,
+    retry_at: Instant,
     new_profile_name: String,
 }
 
@@ -29,7 +29,7 @@ impl KbdSplitApp {
             selected_slot: ControllerSlot::One,
             last_poll: Instant::now() - Duration::from_secs(1),
             connection_error: None,
-            daemon_start_attempted: false,
+            retry_at: Instant::now(),
             new_profile_name: String::new(),
         }
     }
@@ -47,14 +47,13 @@ impl KbdSplitApp {
             Ok(ServerMessage::Error(error)) => self.connection_error = Some(error),
             Ok(ServerMessage::Ack) => {}
             Err(err) => {
-                if !self.daemon_start_attempted {
-                    self.daemon_start_attempted = true;
-                    if let Err(start_err) = self.ipc.ensure_daemon_started() {
-                        self.connection_error = Some(format!("{err:#}; {start_err:#}"));
-                    }
+                if Instant::now() < self.retry_at {
                     return;
                 }
-                self.connection_error = Some(format!("{err:#}"));
+                self.retry_at = Instant::now() + Duration::from_secs(2);
+                if let Err(start_err) = self.ipc.ensure_daemon_started() {
+                    self.connection_error = Some(format!("{err:#}; {start_err:#}"));
+                }
             }
         }
     }
@@ -126,7 +125,8 @@ impl KbdSplitApp {
             warning_band(ui, Color32::from_rgb(130, 55, 38), "Daemon", error);
             if ui.button("Start daemon").clicked() {
                 match self.ipc.ensure_daemon_started() {
-                    Ok(()) => self.connection_error = None,
+                    Ok(true) => self.connection_error = None,
+                    Ok(false) => self.connection_error = Some("daemon binary not found".to_owned()),
                     Err(err) => self.connection_error = Some(format!("{err:#}")),
                 }
             }
@@ -620,7 +620,6 @@ impl KbdSplitApp {
                     SlotLifecycle::Bound => Color32::from_rgb(72, 132, 200),
                     SlotLifecycle::Locked => Color32::from_rgb(210, 134, 54),
                     SlotLifecycle::Active => Color32::from_rgb(54, 172, 100),
-                    SlotLifecycle::Paused => Color32::from_rgb(160, 130, 48),
                     SlotLifecycle::Error => Color32::from_rgb(210, 76, 68),
                 };
                 ui.colored_label(color, lifecycle_text(slot.lifecycle));
@@ -657,7 +656,7 @@ impl KbdSplitApp {
             .stick_to_bottom(true)
             .show(ui, |ui| {
                 if let Some(snapshot) = &self.snapshot {
-                    for entry in snapshot.event_log.iter().rev() {
+                    for entry in &snapshot.event_log {
                         let color = match entry.level {
                             LogLevel::Info => Color32::GRAY,
                             LogLevel::Warning => Color32::from_rgb(210, 145, 66),
@@ -690,7 +689,6 @@ fn lifecycle_text(lifecycle: SlotLifecycle) -> &'static str {
         SlotLifecycle::Bound => "Bound",
         SlotLifecycle::Locked => "Locked",
         SlotLifecycle::Active => "Active",
-        SlotLifecycle::Paused => "Paused",
         SlotLifecycle::Error => "Error",
     }
 }

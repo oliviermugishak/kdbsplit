@@ -101,14 +101,23 @@ impl ProfileStore {
         let profiles_dir = self.base.join("profiles");
 
         let active_profile = if conf_path.exists() {
-            let text = fs::read_to_string(&conf_path)
-                .with_context(|| format!("failed to read {}", conf_path.display()))?;
-            let cfg: serde_json::Value = toml::from_str(&text)
-                .with_context(|| format!("failed to parse {}", conf_path.display()))?;
-            cfg.get("active_profile")
-                .and_then(|v| v.as_str())
-                .unwrap_or("Default")
-                .to_owned()
+            match fs::read_to_string(&conf_path) {
+                Ok(text) => match toml::from_str::<serde_json::Value>(&text) {
+                    Ok(cfg) => cfg
+                        .get("active_profile")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Default")
+                        .to_owned(),
+                    Err(err) => {
+                        tracing::warn!("failed to parse config.toml, using defaults: {err}");
+                        "Default".to_owned()
+                    }
+                },
+                Err(err) => {
+                    tracing::warn!("failed to read config.toml, using defaults: {err}");
+                    "Default".to_owned()
+                }
+            }
         } else {
             "Default".to_owned()
         };

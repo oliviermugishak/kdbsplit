@@ -29,8 +29,9 @@ impl RuntimeSlot {
     }
 
     pub fn apply_action(&mut self, action: ControllerAction, pressed: bool) {
-        self.held_actions.insert(action);
-        if !pressed {
+        if pressed {
+            self.held_actions.insert(action);
+        } else {
             self.held_actions.remove(&action);
         }
         apply_action_delta(&mut self.status.state, action, pressed);
@@ -51,6 +52,59 @@ impl RuntimeSlot {
         self.status.state = state_from_actions(&self.held_actions);
     }
 
+    /// Access held actions for reconciliation (SYN_DROPPED recovery).
+    pub fn held_actions(&self) -> &BTreeSet<ControllerAction> {
+        &self.held_actions
+    }
+
+    /// Reconcile held actions against a kernel evdev key bitmap.
+    /// Returns true if any state changed and re-emit is needed.
+    pub fn reconcile_from_bitmap(&mut self, bitmap: &[u8], bindings: &[KeyBinding]) -> bool {
+        let mut expected: BTreeSet<ControllerAction> = BTreeSet::new();
+        for binding in bindings {
+            let bit = binding.key.0 as usize;
+            if bitmap.get(bit / 8).is_some_and(|byte| byte & (1 << (bit % 8)) != 0) {
+                expected.insert(binding.action);
+            }
+        }
+
+        if self.held_actions == expected {
+            return false;
+        }
+
+        // Collect diffs first to avoid borrowing issues
+        let to_release: Vec<ControllerAction> = self
+            .held_actions
+            .difference(&expected)
+            .copied()
+            .collect();
+        let to_press: Vec<ControllerAction> = expected
+            .difference(&self.held_actions)
+            .copied()
+            .collect();
+
+        for action in &to_release {
+            apply_action_delta(&mut self.status.state, *action, false);
+        }
+        for action in &to_press {
+            apply_action_delta(&mut self.status.state, *action, true);
+        }
+        self.held_actions = expected;
+
+        if self.status.device_id.is_some() && self.status.lifecycle != SlotLifecycle::Error {
+            self.status.lifecycle = if self.held_actions.is_empty() {
+                if self.status.locked {
+                    SlotLifecycle::Locked
+                } else {
+                    SlotLifecycle::Bound
+                }
+            } else {
+                SlotLifecycle::Active
+            };
+        }
+        true
+    }
+
     pub fn clear_inputs(&mut self) {
         self.held_actions.clear();
         self.status.state = ControllerState::default();
@@ -63,12 +117,10 @@ fn apply_action_delta(state: &mut ControllerState, action: ControllerAction, pre
             state.set_button(btn, pressed);
         }
         ControllerAction::Trigger(Trigger::Left) => {
-            let delta: i8 = if pressed { 1 } else { -1 };
-            state.axes.left_trigger = state.axes.left_trigger.wrapping_add_signed(delta);
+            state.axes.left_trigger = if pressed { 255 } else { 0 };
         }
         ControllerAction::Trigger(Trigger::Right) => {
-            let delta: i8 = if pressed { 1 } else { -1 };
-            state.axes.right_trigger = state.axes.right_trigger.wrapping_add_signed(delta);
+            state.axes.right_trigger = if pressed { 255 } else { 0 };
         }
         ControllerAction::Stick { stick, direction } => {
             let delta: i16 = if pressed { 1 } else { -1 };
