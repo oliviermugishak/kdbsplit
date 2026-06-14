@@ -1,22 +1,24 @@
 use kbdsplit_shared::{
     ControllerAction, ControllerSlot, ControllerState, Direction,
-    KeyBinding, SlotLifecycle, SlotStatus, Stick, Trigger,
+    KeyBinding, KeyCode, SlotLifecycle, SlotStatus, Stick, Trigger,
 };
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 const STICK_MAX: i16 = 32767;
 
 #[derive(Debug, Clone)]
 pub struct RuntimeSlot {
     pub status: SlotStatus,
-    held_actions: BTreeSet<ControllerAction>,
+    held_keys: BTreeSet<KeyCode>,
+    action_refcount: HashMap<ControllerAction, u32>,
 }
 
 impl RuntimeSlot {
     pub fn new(slot: ControllerSlot) -> Self {
         Self {
             status: SlotStatus::empty(slot),
-            held_actions: BTreeSet::new(),
+            held_keys: BTreeSet::new(),
+            action_refcount: HashMap::new(),
         }
     }
 
@@ -28,86 +30,121 @@ impl RuntimeSlot {
         self.status.bindings = bindings;
     }
 
-    pub fn apply_action(&mut self, action: ControllerAction, pressed: bool) {
+    /// Apply a key press/release with per-key refcounting.
+    /// Returns true if the key state actually changed.
+    pub fn apply_key(&mut self, key_code: KeyCode, action: ControllerAction, pressed: bool) -> bool {
         if pressed {
-            self.held_actions.insert(action);
+            if !self.held_keys.insert(key_code) {
+                return false;
+            }
+            let rc = self.action_refcount.entry(action).or_insert(0);
+            let was_inactive = *rc == 0;
+            *rc += 1;
+            if was_inactive {
+                apply_action_delta(&mut self.status.state, action, true);
+            }
         } else {
-            self.held_actions.remove(&action);
-        }
-        apply_action_delta(&mut self.status.state, action, pressed);
-        if self.status.device_id.is_some() && self.status.lifecycle != SlotLifecycle::Error {
-            self.status.lifecycle = if self.held_actions.is_empty() {
-                if self.status.locked {
-                    SlotLifecycle::Locked
-                } else {
-                    SlotLifecycle::Bound
+            if !self.held_keys.remove(&key_code) {
+                return false;
+            }
+            if let std::collections::hash_map::Entry::Occupied(mut entry) =
+                self.action_refcount.entry(action)
+            {
+                let rc = entry.get_mut();
+                *rc = rc.saturating_sub(1);
+                if *rc == 0 {
+                    entry.remove();
+                    apply_action_delta(&mut self.status.state, action, false);
                 }
-            } else {
-                SlotLifecycle::Active
-            };
-        }
-    }
-
-    pub fn reset_state_from_actions(&mut self) {
-        self.status.state = state_from_actions(&self.held_actions);
-    }
-
-    /// Access held actions for reconciliation (SYN_DROPPED recovery).
-    pub fn held_actions(&self) -> &BTreeSet<ControllerAction> {
-        &self.held_actions
-    }
-
-    /// Reconcile held actions against a kernel evdev key bitmap.
-    /// Returns true if any state changed and re-emit is needed.
-    pub fn reconcile_from_bitmap(&mut self, bitmap: &[u8], bindings: &[KeyBinding]) -> bool {
-        let mut expected: BTreeSet<ControllerAction> = BTreeSet::new();
-        for binding in bindings {
-            let bit = binding.key.0 as usize;
-            if bitmap.get(bit / 8).is_some_and(|byte| byte & (1 << (bit % 8)) != 0) {
-                expected.insert(binding.action);
             }
         }
-
-        if self.held_actions == expected {
-            return false;
-        }
-
-        // Collect diffs first to avoid borrowing issues
-        let to_release: Vec<ControllerAction> = self
-            .held_actions
-            .difference(&expected)
-            .copied()
-            .collect();
-        let to_press: Vec<ControllerAction> = expected
-            .difference(&self.held_actions)
-            .copied()
-            .collect();
-
-        for action in &to_release {
-            apply_action_delta(&mut self.status.state, *action, false);
-        }
-        for action in &to_press {
-            apply_action_delta(&mut self.status.state, *action, true);
-        }
-        self.held_actions = expected;
-
-        if self.status.device_id.is_some() && self.status.lifecycle != SlotLifecycle::Error {
-            self.status.lifecycle = if self.held_actions.is_empty() {
-                if self.status.locked {
-                    SlotLifecycle::Locked
-                } else {
-                    SlotLifecycle::Bound
-                }
-            } else {
-                SlotLifecycle::Active
-            };
-        }
+        self.update_lifecycle();
         true
     }
 
+    /// Directly apply an action without key tracking (used by test injection).
+    /// This does not update refcounts — use only for debug purposes.
+    pub fn apply_action(&mut self, action: ControllerAction, pressed: bool) {
+        apply_action_delta(&mut self.status.state, action, pressed);
+        if self.status.device_id.is_some() && self.status.lifecycle != SlotLifecycle::Error {
+            if pressed {
+                self.status.lifecycle = SlotLifecycle::Active;
+            } else if self.held_keys.is_empty() && self.status.state == ControllerState::default() {
+                self.status.lifecycle = if self.status.locked {
+                    SlotLifecycle::Locked
+                } else {
+                    SlotLifecycle::Bound
+                };
+            }
+        }
+    }
+
+    /// Reconcile held keys against a kernel evdev key bitmap.
+    /// Works at key level: diffs physical keys against our held_keys,
+    /// then processes each diff through apply_key for correct refcounting.
+    /// Returns true if any state changed and re-emit is needed.
+    pub fn reconcile_from_bitmap(&mut self, bitmap: &[u8], bindings: &[KeyBinding]) -> bool {
+        let mut physical: BTreeSet<KeyCode> = BTreeSet::new();
+        for binding in bindings {
+            let bit = binding.key.0 as usize;
+            if bitmap.get(bit / 8).is_some_and(|byte| byte & (1 << (bit % 8)) != 0) {
+                physical.insert(binding.key);
+            }
+        }
+
+        if self.held_keys == physical {
+            return false;
+        }
+
+        // Collect diffs first to avoid borrow conflicts with self.apply_key
+        let to_release: Vec<(KeyCode, ControllerAction)> = self
+            .held_keys
+            .difference(&physical)
+            .filter_map(|key_code| {
+                bindings
+                    .iter()
+                    .find(|b| &b.key == key_code)
+                    .map(|b| (b.key, b.action))
+            })
+            .collect();
+        let to_press: Vec<(KeyCode, ControllerAction)> = physical
+            .difference(&self.held_keys)
+            .filter_map(|key_code| {
+                bindings
+                    .iter()
+                    .find(|b| &b.key == key_code)
+                    .map(|b| (b.key, b.action))
+            })
+            .collect();
+
+        let mut changed = false;
+        for (key_code, action) in &to_release {
+            changed |= self.apply_key(*key_code, *action, false);
+        }
+        for (key_code, action) in &to_press {
+            changed |= self.apply_key(*key_code, *action, true);
+        }
+        changed
+    }
+
     pub fn clear_inputs(&mut self) {
-        self.held_actions.clear();
+        self.held_keys.clear();
+        self.action_refcount.clear();
         self.status.state = ControllerState::default();
+    }
+
+    fn update_lifecycle(&mut self) {
+        if self.status.device_id.is_some() && self.status.lifecycle != SlotLifecycle::Error {
+            self.status.lifecycle = if self.held_keys.is_empty() {
+                if self.status.locked {
+                    SlotLifecycle::Locked
+                } else {
+                    SlotLifecycle::Bound
+                }
+            } else {
+                SlotLifecycle::Active
+            };
+        }
     }
 }
 

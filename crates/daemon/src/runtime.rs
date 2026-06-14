@@ -857,7 +857,7 @@ fn handle_key_event(
 
         let current = {
             let Some(runtime_slot) = s.slots.get_mut(&slot) else { return };
-            runtime_slot.apply_action(binding.action, pressed);
+            runtime_slot.apply_key(KeyCode(key_code), binding.action, pressed);
             runtime_slot.status.state
         };
 
@@ -922,33 +922,48 @@ fn handle_syn_dropped(
     };
     let Some(bindings) = bindings else { return };
 
-    let mut s = state.lock();
-    let Some(runtime_slot) = s.slots.get_mut(&slot) else { return };
-    if !runtime_slot.reconcile_from_bitmap(&bitmap, &bindings) {
-        return;
-    }
-    let current = runtime_slot.status.state;
-    let _ = runtime_slot;
-
-    let Some(output) = s.outputs.get_mut(&slot) else { return };
-    if let Err(err) = output.emit_state(&current) {
-        s.log(
-            LogLevel::Error,
-            format!("SYN_DROPPED: controller output failed for {slot}: {err:#}"),
-        );
-        if let Some(runtime_slot) = s.slots.get_mut(&slot) {
-            runtime_slot.status.lifecycle = SlotLifecycle::Error;
-            runtime_slot.status.last_error = Some(format!("{err:#}"));
+    // Phase 1: Lock — reconcile state, extract output
+    let (current, mut output) = {
+        let mut s = state.lock();
+        let Some(runtime_slot) = s.slots.get_mut(&slot) else { return };
+        if !runtime_slot.reconcile_from_bitmap(&bitmap, &bindings) {
+            return;
         }
-        s.outputs.remove(&slot);
-    } else if let Some(runtime_slot) = s.slots.get_mut(&slot)
-        && runtime_slot.status.lifecycle == SlotLifecycle::Error
-    {
-        runtime_slot.status.lifecycle = if runtime_slot.status.locked {
-            SlotLifecycle::Locked
-        } else {
-            SlotLifecycle::Bound
-        };
-        runtime_slot.status.last_error = None;
+        let current = runtime_slot.status.state;
+        let Some(output) = s.outputs.remove(&slot) else { return };
+        (current, output)
+    };
+
+    // Phase 2: Emit WITHOUT the lock
+    let result = output.emit_state(&current);
+
+    // Phase 3: Re-lock for error recovery and to put output back
+    let mut s = state.lock();
+    s.outputs.insert(slot, output);
+
+    match result {
+        Ok(()) => {
+            if let Some(runtime_slot) = s.slots.get_mut(&slot)
+                && runtime_slot.status.lifecycle == SlotLifecycle::Error
+            {
+                runtime_slot.status.lifecycle = if runtime_slot.status.locked {
+                    SlotLifecycle::Locked
+                } else {
+                    SlotLifecycle::Bound
+                };
+                runtime_slot.status.last_error = None;
+            }
+        }
+        Err(err) => {
+            if let Some(runtime_slot) = s.slots.get_mut(&slot) {
+                runtime_slot.status.lifecycle = SlotLifecycle::Error;
+                runtime_slot.status.last_error = Some(format!("{err:#}"));
+            }
+            s.log(
+                LogLevel::Error,
+                format!("SYN_DROPPED: controller output failed for {slot}: {err:#}"),
+            );
+            s.outputs.remove(&slot);
+        }
     }
 }

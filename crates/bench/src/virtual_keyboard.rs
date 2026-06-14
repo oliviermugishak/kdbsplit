@@ -54,20 +54,6 @@ impl VirtualKeyboard {
         Ok(())
     }
 
-    #[allow(dead_code)]
-    pub fn press(&mut self, code: u16) -> Result<()> {
-        self.emit(EV_KEY, code, 1)?;
-        self.emit(EV_SYN, SYN_REPORT, 0)?;
-        Ok(())
-    }
-
-    #[allow(dead_code)]
-    pub fn release(&mut self, code: u16) -> Result<()> {
-        self.emit(EV_KEY, code, 0)?;
-        self.emit(EV_SYN, SYN_REPORT, 0)?;
-        Ok(())
-    }
-
     fn emit(&mut self, type_: u16, code: u16, value: i32) -> Result<()> {
         let event = InputEvent {
             time: libc::timeval { tv_sec: 0, tv_usec: 0 },
@@ -84,10 +70,6 @@ impl VirtualKeyboard {
         self.file.write_all(bytes).context("uinput write failed")
     }
 
-    #[allow(dead_code)]
-    pub fn as_raw_fd(&self) -> RawFd {
-        self.file.as_raw_fd()
-    }
 }
 
 impl Drop for VirtualKeyboard {
