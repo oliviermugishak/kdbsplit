@@ -4,7 +4,9 @@ set -euo pipefail
 APP_NAME="KbdSplit"
 BIN_DIR="/usr/local/bin"
 DESKTOP_DIR="/usr/local/share/applications"
+ICON_DIR="/usr/local/share/icons/hicolor/scalable/apps"
 UDEV_RULES_DIR="/etc/udev/rules.d"
+SYSTEMD_DIR="/etc/systemd/system"
 BUILD_PROFILE="release"
 REPO_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 TARGET_DIR="$REPO_DIR/target/$BUILD_PROFILE"
@@ -15,12 +17,15 @@ usage() {
 Install $APP_NAME.
 
 Usage:
-  ./install.sh [--debug] [--no-build] [--no-input-group]
+  ./install.sh [--debug] [--no-build] [--no-input-group] [--with-systemd]
+  ./install.sh --uninstall
 
 Options:
   --debug           Install debug binaries from target/debug.
   --no-build        Do not run cargo build before installing.
   --no-input-group  Do not add the current user to the input group.
+  --with-systemd    Install and enable kbdsplitd as a systemd service.
+  -u, --uninstall   Uninstall (delegates to uninstall.sh).
   -h, --help        Show this help.
 EOF
 }
@@ -40,9 +45,47 @@ as_root() {
   fi
 }
 
+as_user() {
+  if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+    sudo -u "$INSTALL_USER" "$@"
+  else
+    "$@"
+  fi
+}
+
+install_icon() {
+  local svg_src="$REPO_DIR/assets/icon.svg"
+  local png_src="$REPO_DIR/assets/icon.png"
+  if [[ -f "$svg_src" ]]; then
+    local dir="$ICON_DIR"
+    echo "Installing app icon (SVG)"
+    as_root install -d -m 0755 "$dir"
+    as_root install -m 0644 "$svg_src" "$dir/dev.kbdsplit.KbdSplit.svg"
+  fi
+  if [[ -f "$png_src" ]]; then
+    local dir="/usr/local/share/icons/hicolor/128x128/apps"
+    echo "Installing app icon (PNG)"
+    as_root install -d -m 0755 "$dir"
+    as_root install -m 0644 "$png_src" "$dir/dev.kbdsplit.KbdSplit.png"
+  fi
+}
+
+install_systemd_service() {
+  local unit="kbdsplitd.service"
+  local src="$REPO_DIR/packaging/systemd/$unit"
+  local dst="$SYSTEMD_DIR/$unit"
+  echo "Installing systemd service"
+  as_root install -d -m 0755 "$SYSTEMD_DIR"
+  as_root install -m 0644 "$src" "$dst"
+  as_root systemctl daemon-reload
+  as_root systemctl enable "$unit"
+  as_root systemctl start "$unit" || true
+}
+
 main() {
   local do_build=1
   local add_input_group=1
+  local with_systemd=0
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -55,6 +98,12 @@ main() {
         ;;
       --no-input-group)
         add_input_group=0
+        ;;
+      --with-systemd)
+        with_systemd=1
+        ;;
+      -u|--uninstall)
+        exec "$REPO_DIR/uninstall.sh" "${@:2}"
         ;;
       -h|--help)
         usage
@@ -97,11 +146,32 @@ main() {
     "$REPO_DIR/packaging/desktop/dev.kbdsplit.KbdSplit.desktop" \
     "$DESKTOP_DIR/dev.kbdsplit.KbdSplit.desktop"
 
+  # Place desktop file in user home for Omarchy desktop view
+  local user_home
+  user_home="$(getent passwd "$INSTALL_USER" | cut -d: -f6)"
+  if [[ -n "$user_home" ]] && [[ -d "$user_home" ]]; then
+    echo "Installing desktop shortcut in $user_home"
+    as_user install -m 0644 \
+      "$REPO_DIR/packaging/desktop/dev.kbdsplit.KbdSplit.desktop" \
+      "$user_home/KbdSplit.desktop"
+
+    as_user mkdir -p "$user_home/.local/share/applications"
+    as_user install -m 0644 \
+      "$REPO_DIR/packaging/desktop/dev.kbdsplit.KbdSplit.desktop" \
+      "$user_home/.local/share/applications/dev.kbdsplit.KbdSplit.desktop"
+  fi
+
+  install_icon
+
   echo "Installing udev rules"
   as_root install -d -m 0755 "$UDEV_RULES_DIR"
   as_root install -m 0644 \
     "$REPO_DIR/packaging/udev/70-kbdsplit.rules" \
     "$UDEV_RULES_DIR/70-kbdsplit.rules"
+
+  if [[ "$with_systemd" -eq 1 ]]; then
+    install_systemd_service
+  fi
 
   if [[ "$add_input_group" -eq 1 ]]; then
     if ! getent group input >/dev/null 2>&1; then

@@ -347,7 +347,10 @@ pub struct BindingCapture {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CaptureStatus {
-    Waiting { slot: ControllerSlot, action: ControllerAction },
+    Waiting {
+        slot: ControllerSlot,
+        action: ControllerAction,
+    },
     None,
 }
 
@@ -367,13 +370,24 @@ mod tests {
             uniq: Some("A1B2C3D4".to_owned()),
         };
         let id = fp.stable_id();
-        assert_eq!(id.0, "0003:045e:028e:microsoft-xbox-360-controller:usb-0000-00-14-0-1-input0:a1b2c3d4");
+        assert_eq!(
+            id.0,
+            "0003:045e:028e:microsoft-xbox-360-controller:usb-0000-00-14-0-1-input0:a1b2c3d4"
+        );
     }
 
     #[test]
     fn test_controller_slot_all() {
         assert_eq!(ControllerSlot::ALL.len(), 4);
-        assert_eq!(ControllerSlot::ALL, [ControllerSlot::One, ControllerSlot::Two, ControllerSlot::Three, ControllerSlot::Four]);
+        assert_eq!(
+            ControllerSlot::ALL,
+            [
+                ControllerSlot::One,
+                ControllerSlot::Two,
+                ControllerSlot::Three,
+                ControllerSlot::Four
+            ]
+        );
     }
 
     #[test]

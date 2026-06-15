@@ -3,7 +3,10 @@ set -euo pipefail
 
 BIN_DIR="/usr/local/bin"
 DESKTOP_FILE="/usr/local/share/applications/dev.kbdsplit.KbdSplit.desktop"
+ICON_SVG="/usr/local/share/icons/hicolor/scalable/apps/dev.kbdsplit.KbdSplit.svg"
+ICON_PNG="/usr/local/share/icons/hicolor/128x128/apps/dev.kbdsplit.KbdSplit.png"
 UDEV_RULE="/etc/udev/rules.d/70-kbdsplit.rules"
+SYSTEMD_UNIT="/etc/systemd/system/kbdsplitd.service"
 SOCKET="/tmp/kbdsplit.sock"
 PURGE_CONFIG=0
 INSTALL_USER="${SUDO_USER:-$USER}"
@@ -51,11 +54,29 @@ main() {
   echo "Stopping running daemon if present"
   pkill -x kbdsplitd >/dev/null 2>&1 || true
 
+  # Stop, disable, and remove systemd service if installed
+  if [[ -f "$SYSTEMD_UNIT" ]]; then
+    echo "Removing systemd service"
+    as_root systemctl stop kbdsplitd 2>/dev/null || true
+    as_root systemctl disable kbdsplitd 2>/dev/null || true
+    as_root rm -f "$SYSTEMD_UNIT"
+    as_root systemctl daemon-reload 2>/dev/null || true
+  fi
+
   echo "Removing installed files"
   as_root rm -f "$BIN_DIR/kbdsplitd" "$BIN_DIR/kbdsplit-gui"
   as_root rm -f "$DESKTOP_FILE"
+  as_root rm -f "$ICON_SVG" "$ICON_PNG"
   as_root rm -f "$UDEV_RULE"
   rm -f "$SOCKET"
+
+  # Remove user home desktop files
+  local user_home
+  user_home="$(getent passwd "$INSTALL_USER" | cut -d: -f6)"
+  if [[ -n "$user_home" ]] && [[ -d "$user_home" ]]; then
+    rm -f "$user_home/KbdSplit.desktop"
+    rm -f "$user_home/.local/share/applications/dev.kbdsplit.KbdSplit.desktop"
+  fi
 
   if command -v udevadm >/dev/null 2>&1; then
     echo "Reloading udev rules"

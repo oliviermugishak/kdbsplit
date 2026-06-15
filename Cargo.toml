@@ -11,8 +11,12 @@ resolver = "2"
 [workspace.package]
 edition = "2024"
 license = "MIT"
-repository = "https://example.invalid/kbdsplit"
-rust-version = "1.96"
+repository = "https://github.com/oliviermugishak/kbdsplit"
+homepage = "https://github.com/oliviermugishak/kbdsplit"
+rust-version = "1.85"
+description = "Split up to four physical keyboards into virtual Xbox-style controllers"
+keywords = ["keyboard", "controller", "gamepad", "xbox", "evdev", "uinput"]
+categories = ["command-line-utilities", "game-development", "hardware-support"]
 
 [workspace.dependencies]
 anyhow = "1.0.102"

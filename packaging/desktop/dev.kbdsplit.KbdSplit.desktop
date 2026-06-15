@@ -3,5 +3,7 @@ Type=Application
 Name=KbdSplit
 Comment=Split keyboards into virtual Xbox controllers
 Exec=kbdsplit-gui
+Icon=dev.kbdsplit.KbdSplit
 Terminal=false
+StartupNotify=true
 Categories=Utility;Game;

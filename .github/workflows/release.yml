@@ -1,0 +1,36 @@
+name: Release
+
+on:
+  push:
+    tags: [ "v*" ]
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install system dependencies
+      run: sudo apt-get update && sudo apt-get install -y libudev-dev
+    - name: Build release binaries
+      run: cargo build --workspace --release
+    - name: Archive binaries
+      run: |
+        mkdir -p dist
+        cp target/release/kbdsplitd dist/
+        cp target/release/kbdsplit-gui dist/
+        cp install.sh dist/
+        cp uninstall.sh dist/
+        cp -r packaging dist/
+        cp -r assets dist/
+        cp README.md dist/
+        cp LICENSE dist/
+        cd dist && tar czf ../kbdsplit-${{ github.ref_name }}.tar.gz .
+    - name: Upload release artifacts
+      uses: softprops/action-gh-release@v2
+      with:
+        files: kbdsplit-*.tar.gz
+        generate_release_notes: true

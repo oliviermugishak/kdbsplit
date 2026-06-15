@@ -89,7 +89,9 @@ pub struct ProfileStore {
 
 impl ProfileStore {
     pub fn new() -> Result<Self> {
-        Ok(Self { base: config_dir()? })
+        Ok(Self {
+            base: config_dir()?,
+        })
     }
 
     pub fn with_path(path: PathBuf) -> Self {
@@ -146,17 +148,25 @@ impl ProfileStore {
 
         // If no profiles exist, create defaults
         if profiles.is_empty() {
-            for p in [Profile::default(), Profile {
-                name: "eFootball".to_owned(),
-                slots: ControllerSlot::ALL
-                    .into_iter()
-                    .map(|slot| (slot, SlotProfile {
-                        device_id: None,
-                        locked: false,
-                        bindings: default_bindings(),
-                    }))
-                    .collect(),
-            }] {
+            for p in [
+                Profile::default(),
+                Profile {
+                    name: "eFootball".to_owned(),
+                    slots: ControllerSlot::ALL
+                        .into_iter()
+                        .map(|slot| {
+                            (
+                                slot,
+                                SlotProfile {
+                                    device_id: None,
+                                    locked: false,
+                                    bindings: default_bindings(),
+                                },
+                            )
+                        })
+                        .collect(),
+                },
+            ] {
                 let name = p.name.clone();
                 profiles.insert(name.clone(), p);
             }
@@ -183,7 +193,8 @@ impl ProfileStore {
         let conf_path = self.base.join("config.toml");
         let text = toml::to_string_pretty(&serde_json::json!({
             "active_profile": config.active_profile
-        })).context("failed to serialize config")?;
+        }))
+        .context("failed to serialize config")?;
         fs::write(&conf_path, text)
             .with_context(|| format!("failed to write {}", conf_path.display()))?;
 
@@ -200,7 +211,8 @@ impl ProfileStore {
         // Remove stale profile files that are no longer in config
         if profiles_dir.exists() {
             for entry in fs::read_dir(&profiles_dir)
-                .with_context(|| format!("failed to read {}", profiles_dir.display()))? {
+                .with_context(|| format!("failed to read {}", profiles_dir.display()))?
+            {
                 let entry = entry?;
                 if entry.path().extension().is_some_and(|ext| ext == "toml")
                     && let Some(stem) = entry.path().file_stem().and_then(|s| s.to_str())
@@ -262,11 +274,16 @@ mod tests {
             name: "Custom".to_owned(),
             slots: ControllerSlot::ALL
                 .into_iter()
-                .map(|slot| (slot, SlotProfile {
-                    device_id: None,
-                    locked: false,
-                    bindings: default_bindings(),
-                }))
+                .map(|slot| {
+                    (
+                        slot,
+                        SlotProfile {
+                            device_id: None,
+                            locked: false,
+                            bindings: default_bindings(),
+                        },
+                    )
+                })
                 .collect(),
         };
         let text = toml::to_string_pretty(&external).unwrap();

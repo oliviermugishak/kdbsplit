@@ -40,7 +40,9 @@ impl VirtualKeyboard {
                 std::mem::size_of::<UInputUserDev>(),
             )
         };
-        (&file).write_all(bytes).context("failed to configure uinput")?;
+        (&file)
+            .write_all(bytes)
+            .context("failed to configure uinput")?;
         ioctl_simple(fd, ui_dev_create()).context("UI_DEV_CREATE failed")?;
 
         Ok(Self { file })
@@ -56,7 +58,10 @@ impl VirtualKeyboard {
 
     fn emit(&mut self, type_: u16, code: u16, value: i32) -> Result<()> {
         let event = InputEvent {
-            time: libc::timeval { tv_sec: 0, tv_usec: 0 },
+            time: libc::timeval {
+                tv_sec: 0,
+                tv_usec: 0,
+            },
             type_,
             code,
             value,
@@ -69,7 +74,6 @@ impl VirtualKeyboard {
         };
         self.file.write_all(bytes).context("uinput write failed")
     }
-
 }
 
 impl Drop for VirtualKeyboard {
@@ -148,7 +152,10 @@ const IOC_NONE: u64 = 0;
 const IOC_WRITE: u64 = 1;
 
 const fn ioc(dir: u64, type_: u64, nr: u64, size: u64) -> libc::c_ulong {
-    ((dir << IOC_DIRSHIFT) | (type_ << IOC_TYPESHIFT) | (nr << IOC_NRSHIFT) | (size << IOC_SIZESHIFT)) as libc::c_ulong
+    ((dir << IOC_DIRSHIFT)
+        | (type_ << IOC_TYPESHIFT)
+        | (nr << IOC_NRSHIFT)
+        | (size << IOC_SIZESHIFT)) as libc::c_ulong
 }
 
 const fn io(type_: u8, nr: u8) -> libc::c_ulong {
@@ -156,10 +163,23 @@ const fn io(type_: u8, nr: u8) -> libc::c_ulong {
 }
 
 const fn iow_int(type_: u8, nr: u8) -> libc::c_ulong {
-    ioc(IOC_WRITE, type_ as u64, nr as u64, std::mem::size_of::<libc::c_int>() as u64)
+    ioc(
+        IOC_WRITE,
+        type_ as u64,
+        nr as u64,
+        std::mem::size_of::<libc::c_int>() as u64,
+    )
 }
 
-const fn ui_dev_create() -> libc::c_ulong { io(b'U', 1) }
-const fn ui_dev_destroy() -> libc::c_ulong { io(b'U', 2) }
-const fn ui_set_evbit() -> libc::c_ulong { iow_int(b'U', 100) }
-const fn ui_set_keybit() -> libc::c_ulong { iow_int(b'U', 101) }
+const fn ui_dev_create() -> libc::c_ulong {
+    io(b'U', 1)
+}
+const fn ui_dev_destroy() -> libc::c_ulong {
+    io(b'U', 2)
+}
+const fn ui_set_evbit() -> libc::c_ulong {
+    iow_int(b'U', 100)
+}
+const fn ui_set_keybit() -> libc::c_ulong {
+    iow_int(b'U', 101)
+}

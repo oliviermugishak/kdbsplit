@@ -1,12 +1,12 @@
-use crate::evdev::{EV_KEY, EV_SYN, SYN_DROPPED, InputReader, discover_keyboards};
+use crate::SHUTDOWN;
+use crate::evdev::{EV_KEY, EV_SYN, InputReader, SYN_DROPPED, discover_keyboards};
 use crate::ipc::{read_command, write_message};
 use crate::uinput::VirtualGamepad;
-use crate::SHUTDOWN;
 use anyhow::{Context, Result};
 use kbdsplit_core::{AppConfig, ProfileStore, RuntimeSlot};
 use kbdsplit_shared::{
-    AppSnapshot, CaptureStatus, ClientCommand, ControllerAction, ControllerSlot, DeviceId, EventLogEntry, KeyboardDevice,
-    KeyBinding, KeyCode, LogLevel, ServerMessage, SlotLifecycle,
+    AppSnapshot, CaptureStatus, ClientCommand, ControllerAction, ControllerSlot, DeviceId,
+    EventLogEntry, KeyBinding, KeyCode, KeyboardDevice, LogLevel, ServerMessage, SlotLifecycle,
 };
 use parking_lot::Mutex;
 use std::collections::{BTreeMap, BTreeSet};
@@ -228,7 +228,7 @@ impl Daemon {
                     }
                 };
                 if let Some(mut output) = output {
-                    output.emit_state(&current)?;
+                    output.emit_state(&current, VirtualGamepad::now())?;
                     let mut state = self.state.lock();
                     state.outputs.insert(slot, output);
                 }
@@ -287,7 +287,12 @@ impl DaemonState {
             active_profile: self.config.active_profile.clone(),
             profile_names: self.config.profiles.keys().cloned().collect(),
             permission_warnings: self.permission_warnings.clone(),
-            event_log: self.event_log.iter().skip(self.event_log.len().saturating_sub(80)).cloned().collect(),
+            event_log: self
+                .event_log
+                .iter()
+                .skip(self.event_log.len().saturating_sub(80))
+                .cloned()
+                .collect(),
             capture_status: self.capture_status(),
         }
     }
@@ -311,8 +316,14 @@ impl DaemonState {
         let (devices, warnings) = discover_keyboards();
         self.permission_warnings = warnings;
 
-        match fs::OpenOptions::new().read(true).write(true).open("/dev/uinput") {
-            Ok(file) => { drop(file); }
+        match fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open("/dev/uinput")
+        {
+            Ok(file) => {
+                drop(file);
+            }
             Err(err) => {
                 self.permission_warnings.push(format!(
                     "Cannot open /dev/uinput: {}. Install udev rules and ensure you're in the input group.",
@@ -352,7 +363,10 @@ impl DaemonState {
                 if slot_profile.locked
                     && let Err(err) = self.set_device_locked(&device_id, true)
                 {
-                    self.log(LogLevel::Warning, format!("Could not lock {device_id}: {err}"));
+                    self.log(
+                        LogLevel::Warning,
+                        format!("Could not lock {device_id}: {err}"),
+                    );
                 }
             }
         }
@@ -397,7 +411,9 @@ impl DaemonState {
             },
         };
 
-        let device = self.devices.get_mut(&device_id)
+        let device = self
+            .devices
+            .get_mut(&device_id)
             .context("device disappeared during assignment")?;
         device.assigned_slot = Some(slot);
         let locked = device.locked;
@@ -524,10 +540,16 @@ impl DaemonState {
     }
 
     fn create_profile(&mut self, name: &str) -> Result<()> {
-        anyhow::ensure!(!self.config.profiles.contains_key(name), "profile already exists");
+        anyhow::ensure!(
+            !self.config.profiles.contains_key(name),
+            "profile already exists"
+        );
         let profile = kbdsplit_core::Profile {
             name: name.to_owned(),
-            slots: self.config.profiles.get(&self.config.active_profile)
+            slots: self
+                .config
+                .profiles
+                .get(&self.config.active_profile)
                 .map(|p| p.slots.clone())
                 .unwrap_or_else(|| kbdsplit_core::Profile::default().slots),
         };
@@ -539,7 +561,10 @@ impl DaemonState {
     }
 
     fn delete_profile(&mut self, name: &str) -> Result<()> {
-        anyhow::ensure!(self.config.profiles.len() > 1, "cannot delete the last profile");
+        anyhow::ensure!(
+            self.config.profiles.len() > 1,
+            "cannot delete the last profile"
+        );
         anyhow::ensure!(self.config.profiles.contains_key(name), "profile not found");
         self.config.profiles.remove(name);
         if self.config.active_profile == name {
@@ -551,7 +576,12 @@ impl DaemonState {
     }
 
     fn sync_profile_bindings(&mut self) {
-        let Some(profile) = self.config.profiles.get(&self.config.active_profile).cloned() else {
+        let Some(profile) = self
+            .config
+            .profiles
+            .get(&self.config.active_profile)
+            .cloned()
+        else {
             return;
         };
         for (slot, slot_profile) in &profile.slots {
@@ -605,7 +635,10 @@ impl DaemonState {
                 slot_profile.locked = false;
             }
         }
-        self.log(LogLevel::Warning, "KILL SWITCH: all locks released".to_owned());
+        self.log(
+            LogLevel::Warning,
+            "KILL SWITCH: all locks released".to_owned(),
+        );
         let _ = self.save_config();
     }
 
@@ -614,7 +647,10 @@ impl DaemonState {
             self.log(LogLevel::Warning, "Overwriting existing capture".to_owned());
         }
         self.capture_in_progress = Some((slot, action, Instant::now()));
-        self.log(LogLevel::Info, format!("Capture started for {slot}: {action}"));
+        self.log(
+            LogLevel::Info,
+            format!("Capture started for {slot}: {action}"),
+        );
     }
 
     fn cancel_binding_capture(&mut self) {
@@ -698,7 +734,9 @@ fn spawn_hotplug_watcher(
 fn reader_loop(state: Arc<Mutex<DaemonState>>, device_id: DeviceId) {
     let path = {
         let s = state.lock();
-        let Some(device) = s.devices.get(&device_id) else { return };
+        let Some(device) = s.devices.get(&device_id) else {
+            return;
+        };
         PathBuf::from(&device.path)
     };
 
@@ -721,7 +759,9 @@ fn reader_loop(state: Arc<Mutex<DaemonState>>, device_id: DeviceId) {
     // Read initial slot/locked state — then cache and refresh periodically
     let current_slot = {
         let s = state.lock();
-        let Some(device) = s.devices.get(&device_id) else { return };
+        let Some(device) = s.devices.get(&device_id) else {
+            return;
+        };
         let Some(slot) = device.assigned_slot else {
             let _ = reader.set_grabbed(false);
             return;
@@ -731,8 +771,11 @@ fn reader_loop(state: Arc<Mutex<DaemonState>>, device_id: DeviceId) {
 
     // Initial grab
     if let Err(err) = reader.set_grabbed(
-        state.lock().devices.get(&device_id)
-            .is_some_and(|d| d.locked)
+        state
+            .lock()
+            .devices
+            .get(&device_id)
+            .is_some_and(|d| d.locked),
     ) {
         let mut s = state.lock();
         if let Some(device) = s.devices.get_mut(&device_id) {
@@ -765,7 +808,9 @@ fn reader_loop(state: Arc<Mutex<DaemonState>>, device_id: DeviceId) {
             Err(_) => {
                 // Check if device still exists on epoll error
                 let s = state.lock();
-                if !s.devices.contains_key(&device_id) { return; }
+                if !s.devices.contains_key(&device_id) {
+                    return;
+                }
                 continue;
             }
         };
@@ -775,7 +820,9 @@ fn reader_loop(state: Arc<Mutex<DaemonState>>, device_id: DeviceId) {
             // This eliminates the 4ms inter-event latency that was causing
             // bursty gamepad output and delayed responses.
             while let Ok(Some(event)) = reader.read_event() {
-                if SHUTDOWN.load(Ordering::Acquire) { return; }
+                if SHUTDOWN.load(Ordering::Acquire) {
+                    return;
+                }
 
                 if event.type_ == EV_KEY && event.value != 2 {
                     let pressed = event.value != 0;
@@ -788,7 +835,7 @@ fn reader_loop(state: Arc<Mutex<DaemonState>>, device_id: DeviceId) {
                         state.lock().release_all_locks();
                         return;
                     }
-                    handle_key_event(&state, current_slot, event.code, pressed);
+                    handle_key_event(&state, current_slot, event.code, pressed, event.time);
                 } else if event.type_ == EV_SYN && event.code == SYN_DROPPED {
                     handle_syn_dropped(&state, &mut reader, current_slot);
                 }
@@ -799,7 +846,9 @@ fn reader_loop(state: Arc<Mutex<DaemonState>>, device_id: DeviceId) {
         // check slot assignment, lock state, and grab status.
         // Eliminates the global mutex acquisition on idle iterations.
         let mut s = state.lock();
-        let Some(device) = s.devices.get(&device_id) else { return };
+        let Some(device) = s.devices.get(&device_id) else {
+            return;
+        };
         let Some(slot) = device.assigned_slot else {
             let _ = reader.set_grabbed(false);
             return;
@@ -820,6 +869,7 @@ fn handle_key_event(
     slot: ControllerSlot,
     key_code: u16,
     pressed: bool,
+    timestamp: libc::timeval,
 ) {
     // Phase 1: Lock — update state, extract output
     let (current, mut output) = {
@@ -855,16 +905,24 @@ fn handle_key_event(
                 s.sync_profile_bindings();
                 let _ = s.save_config();
                 s.capture_in_progress = None;
-                s.log(LogLevel::Info, format!("Bound key {} to {action_str} in {slot}", key_code));
+                s.log(
+                    LogLevel::Info,
+                    format!("Bound key {} to {action_str} in {slot}", key_code),
+                );
                 return;
             }
             if pressed {
-                s.log(LogLevel::Info, format!("Key press on {slot}, but capture was for different slot"));
+                s.log(
+                    LogLevel::Info,
+                    format!("Key press on {slot}, but capture was for different slot"),
+                );
             }
         }
 
         // Normal key handling
-        if !s.outputs.contains_key(&slot) { return; }
+        if !s.outputs.contains_key(&slot) {
+            return;
+        }
 
         let current = if pressed {
             let binding = s
@@ -873,14 +931,22 @@ fn handle_key_event(
                 .get(&s.config.active_profile)
                 .and_then(|profile| profile.slots.get(&slot))
                 .and_then(|slot_profile| {
-                    slot_profile.bindings.iter().find(|b| b.key.0 == key_code).cloned()
+                    slot_profile
+                        .bindings
+                        .iter()
+                        .find(|b| b.key.0 == key_code)
+                        .cloned()
                 });
             let Some(binding) = binding else { return };
-            let Some(runtime_slot) = s.slots.get_mut(&slot) else { return };
+            let Some(runtime_slot) = s.slots.get_mut(&slot) else {
+                return;
+            };
             runtime_slot.key_down(KeyCode(key_code), binding.action);
             runtime_slot.status.state
         } else {
-            let Some(runtime_slot) = s.slots.get_mut(&slot) else { return };
+            let Some(runtime_slot) = s.slots.get_mut(&slot) else {
+                return;
+            };
             runtime_slot.key_up(KeyCode(key_code));
             runtime_slot.status.state
         };
@@ -890,7 +956,7 @@ fn handle_key_event(
     };
 
     // Phase 2: Emit WITHOUT the lock — this is the longest syscall
-    let result = output.emit_state(&current);
+    let result = output.emit_state(&current, timestamp);
 
     // Phase 3: Re-lock for error recovery and to put output back
     let mut s = state.lock();
@@ -949,17 +1015,21 @@ fn handle_syn_dropped(
     // Phase 1: Lock — reconcile state, extract output
     let (current, mut output) = {
         let mut s = state.lock();
-        let Some(runtime_slot) = s.slots.get_mut(&slot) else { return };
+        let Some(runtime_slot) = s.slots.get_mut(&slot) else {
+            return;
+        };
         if !runtime_slot.reconcile_from_bitmap(&bitmap, &bindings) {
             return;
         }
         let current = runtime_slot.status.state;
-        let Some(output) = s.outputs.remove(&slot) else { return };
+        let Some(output) = s.outputs.remove(&slot) else {
+            return;
+        };
         (current, output)
     };
 
     // Phase 2: Emit WITHOUT the lock
-    let result = output.emit_state(&current);
+    let result = output.emit_state(&current, VirtualGamepad::now());
 
     // Phase 3: Re-lock for error recovery and to put output back
     let mut s = state.lock();

@@ -4,9 +4,8 @@ use egui::{
 };
 use kbdsplit_shared::{
     AppSnapshot, CaptureStatus, ClientCommand, ControllerAction, ControllerSlot, ControllerState,
-    DEFAULT_SOCKET_PATH, DeviceId, GamepadButton, Stick, Direction, Trigger, KeyboardDevice,
-    LogLevel, ServerMessage,
-    SlotLifecycle, SlotStatus,
+    DEFAULT_SOCKET_PATH, DeviceId, Direction, GamepadButton, KeyboardDevice, LogLevel,
+    ServerMessage, SlotLifecycle, SlotStatus, Stick, Trigger,
 };
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
@@ -153,22 +152,25 @@ impl KbdSplitApp {
                 .show_ui(ui, |ui| {
                     for name in all_profiles {
                         let is_active = name == active;
-                        if ui
-                            .selectable_label(is_active, name)
-                            .clicked()
-                            && !is_active
-                        {
+                        if ui.selectable_label(is_active, name).clicked() && !is_active {
                             self.send(ClientCommand::LoadProfile { name: name.clone() });
                         }
                     }
                 });
-            if ui.button("Save").on_hover_text("Save current profile").clicked() {
+            if ui
+                .button("Save")
+                .on_hover_text("Save current profile")
+                .clicked()
+            {
                 self.send(ClientCommand::SaveProfile);
             }
         });
         ui.horizontal(|ui| {
             ui.text_edit_singleline(&mut self.new_profile_name);
-            if ui.button("New").on_hover_text("Create new profile").clicked()
+            if ui
+                .button("New")
+                .on_hover_text("Create new profile")
+                .clicked()
                 && !self.new_profile_name.is_empty()
             {
                 self.send(ClientCommand::CreateProfile {
@@ -260,7 +262,9 @@ impl KbdSplitApp {
                         .add_enabled(device.connected, egui::Button::new("Unassign"))
                         .clicked()
                     {
-                        self.send(ClientCommand::UnassignSlot { slot: device.assigned_slot.unwrap() });
+                        self.send(ClientCommand::UnassignSlot {
+                            slot: device.assigned_slot.unwrap(),
+                        });
                     }
                 } else if ui
                     .add_enabled(device.connected, egui::Button::new("Assign"))
@@ -319,7 +323,9 @@ impl KbdSplitApp {
             .collect();
 
         // Check capture status
-        let capture_action = self.snapshot.as_ref()
+        let capture_action = self
+            .snapshot
+            .as_ref()
             .map(|snap| match &snap.capture_status {
                 CaptureStatus::Waiting { slot: s, action } if *s == slot.slot => Some(*action),
                 _ => None,
@@ -330,11 +336,26 @@ impl KbdSplitApp {
         ui.label(RichText::new("Face Buttons").strong());
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            for button in [GamepadButton::North, GamepadButton::West, GamepadButton::South, GamepadButton::East] {
-                let key_label = binding_map.get(&ControllerAction::Button(button)).cloned().unwrap_or_default();
-                let is_capturing = capture_action.as_ref().map(|a| {
-                    if let ControllerAction::Button(b) = a { *b == button } else { false }
-                }).unwrap_or(false);
+            for button in [
+                GamepadButton::North,
+                GamepadButton::West,
+                GamepadButton::South,
+                GamepadButton::East,
+            ] {
+                let key_label = binding_map
+                    .get(&ControllerAction::Button(button))
+                    .cloned()
+                    .unwrap_or_default();
+                let is_capturing = capture_action
+                    .as_ref()
+                    .map(|a| {
+                        if let ControllerAction::Button(b) = a {
+                            *b == button
+                        } else {
+                            false
+                        }
+                    })
+                    .unwrap_or(false);
                 let display = if is_capturing {
                     format!("{} (press key...)", button)
                 } else {
@@ -355,22 +376,62 @@ impl KbdSplitApp {
         ui.label(RichText::new("Shoulder Buttons").strong());
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            let lb_key = binding_map.get(&ControllerAction::Button(GamepadButton::LeftShoulder)).cloned().unwrap_or_default();
-            let rb_key = binding_map.get(&ControllerAction::Button(GamepadButton::RightShoulder)).cloned().unwrap_or_default();
-            let lb_capturing = capture_action.as_ref().map(|a| {
-                if let ControllerAction::Button(b) = a { *b == GamepadButton::LeftShoulder } else { false }
-            }).unwrap_or(false);
-            let rb_capturing = capture_action.as_ref().map(|a| {
-                if let ControllerAction::Button(b) = a { *b == GamepadButton::RightShoulder } else { false }
-            }).unwrap_or(false);
+            let lb_key = binding_map
+                .get(&ControllerAction::Button(GamepadButton::LeftShoulder))
+                .cloned()
+                .unwrap_or_default();
+            let rb_key = binding_map
+                .get(&ControllerAction::Button(GamepadButton::RightShoulder))
+                .cloned()
+                .unwrap_or_default();
+            let lb_capturing = capture_action
+                .as_ref()
+                .map(|a| {
+                    if let ControllerAction::Button(b) = a {
+                        *b == GamepadButton::LeftShoulder
+                    } else {
+                        false
+                    }
+                })
+                .unwrap_or(false);
+            let rb_capturing = capture_action
+                .as_ref()
+                .map(|a| {
+                    if let ControllerAction::Button(b) = a {
+                        *b == GamepadButton::RightShoulder
+                    } else {
+                        false
+                    }
+                })
+                .unwrap_or(false);
 
-            if ui.button(format!("LB: {}", if lb_capturing { "press key..." } else { &lb_key })).clicked() {
+            if ui
+                .button(format!(
+                    "LB: {}",
+                    if lb_capturing {
+                        "press key..."
+                    } else {
+                        &lb_key
+                    }
+                ))
+                .clicked()
+            {
                 self.send(ClientCommand::StartBindingCapture {
                     slot: self.selected_slot,
                     action: ControllerAction::Button(GamepadButton::LeftShoulder),
                 });
             }
-            if ui.button(format!("RB: {}", if rb_capturing { "press key..." } else { &rb_key })).clicked() {
+            if ui
+                .button(format!(
+                    "RB: {}",
+                    if rb_capturing {
+                        "press key..."
+                    } else {
+                        &rb_key
+                    }
+                ))
+                .clicked()
+            {
                 self.send(ClientCommand::StartBindingCapture {
                     slot: self.selected_slot,
                     action: ControllerAction::Button(GamepadButton::RightShoulder),
@@ -383,32 +444,92 @@ impl KbdSplitApp {
         ui.label(RichText::new("Menu Buttons").strong());
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            let back_key = binding_map.get(&ControllerAction::Button(GamepadButton::Select)).cloned().unwrap_or_default();
-            let start_key = binding_map.get(&ControllerAction::Button(GamepadButton::Start)).cloned().unwrap_or_default();
-            let guide_key = binding_map.get(&ControllerAction::Button(GamepadButton::Guide)).cloned().unwrap_or_default();
-            let back_capturing = capture_action.as_ref().map(|a| {
-                if let ControllerAction::Button(b) = a { *b == GamepadButton::Select } else { false }
-            }).unwrap_or(false);
-            let start_capturing = capture_action.as_ref().map(|a| {
-                if let ControllerAction::Button(b) = a { *b == GamepadButton::Start } else { false }
-            }).unwrap_or(false);
-            let guide_capturing = capture_action.as_ref().map(|a| {
-                if let ControllerAction::Button(b) = a { *b == GamepadButton::Guide } else { false }
-            }).unwrap_or(false);
+            let back_key = binding_map
+                .get(&ControllerAction::Button(GamepadButton::Select))
+                .cloned()
+                .unwrap_or_default();
+            let start_key = binding_map
+                .get(&ControllerAction::Button(GamepadButton::Start))
+                .cloned()
+                .unwrap_or_default();
+            let guide_key = binding_map
+                .get(&ControllerAction::Button(GamepadButton::Guide))
+                .cloned()
+                .unwrap_or_default();
+            let back_capturing = capture_action
+                .as_ref()
+                .map(|a| {
+                    if let ControllerAction::Button(b) = a {
+                        *b == GamepadButton::Select
+                    } else {
+                        false
+                    }
+                })
+                .unwrap_or(false);
+            let start_capturing = capture_action
+                .as_ref()
+                .map(|a| {
+                    if let ControllerAction::Button(b) = a {
+                        *b == GamepadButton::Start
+                    } else {
+                        false
+                    }
+                })
+                .unwrap_or(false);
+            let guide_capturing = capture_action
+                .as_ref()
+                .map(|a| {
+                    if let ControllerAction::Button(b) = a {
+                        *b == GamepadButton::Guide
+                    } else {
+                        false
+                    }
+                })
+                .unwrap_or(false);
 
-            if ui.button(format!("Back: {}", if back_capturing { "press key..." } else { &back_key })).clicked() {
+            if ui
+                .button(format!(
+                    "Back: {}",
+                    if back_capturing {
+                        "press key..."
+                    } else {
+                        &back_key
+                    }
+                ))
+                .clicked()
+            {
                 self.send(ClientCommand::StartBindingCapture {
                     slot: self.selected_slot,
                     action: ControllerAction::Button(GamepadButton::Select),
                 });
             }
-            if ui.button(format!("Start: {}", if start_capturing { "press key..." } else { &start_key })).clicked() {
+            if ui
+                .button(format!(
+                    "Start: {}",
+                    if start_capturing {
+                        "press key..."
+                    } else {
+                        &start_key
+                    }
+                ))
+                .clicked()
+            {
                 self.send(ClientCommand::StartBindingCapture {
                     slot: self.selected_slot,
                     action: ControllerAction::Button(GamepadButton::Start),
                 });
             }
-            if ui.button(format!("Guide: {}", if guide_capturing { "press key..." } else { &guide_key })).clicked() {
+            if ui
+                .button(format!(
+                    "Guide: {}",
+                    if guide_capturing {
+                        "press key..."
+                    } else {
+                        &guide_key
+                    }
+                ))
+                .clicked()
+            {
                 self.send(ClientCommand::StartBindingCapture {
                     slot: self.selected_slot,
                     action: ControllerAction::Button(GamepadButton::Guide),
@@ -421,22 +542,62 @@ impl KbdSplitApp {
         ui.label(RichText::new("Triggers").strong());
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            let lt_key = binding_map.get(&ControllerAction::Trigger(Trigger::Left)).cloned().unwrap_or_default();
-            let rt_key = binding_map.get(&ControllerAction::Trigger(Trigger::Right)).cloned().unwrap_or_default();
-            let lt_capturing = capture_action.as_ref().map(|a| {
-                if let ControllerAction::Trigger(t) = a { *t == Trigger::Left } else { false }
-            }).unwrap_or(false);
-            let rt_capturing = capture_action.as_ref().map(|a| {
-                if let ControllerAction::Trigger(t) = a { *t == Trigger::Right } else { false }
-            }).unwrap_or(false);
+            let lt_key = binding_map
+                .get(&ControllerAction::Trigger(Trigger::Left))
+                .cloned()
+                .unwrap_or_default();
+            let rt_key = binding_map
+                .get(&ControllerAction::Trigger(Trigger::Right))
+                .cloned()
+                .unwrap_or_default();
+            let lt_capturing = capture_action
+                .as_ref()
+                .map(|a| {
+                    if let ControllerAction::Trigger(t) = a {
+                        *t == Trigger::Left
+                    } else {
+                        false
+                    }
+                })
+                .unwrap_or(false);
+            let rt_capturing = capture_action
+                .as_ref()
+                .map(|a| {
+                    if let ControllerAction::Trigger(t) = a {
+                        *t == Trigger::Right
+                    } else {
+                        false
+                    }
+                })
+                .unwrap_or(false);
 
-            if ui.button(format!("LT: {}", if lt_capturing { "press key..." } else { &lt_key })).clicked() {
+            if ui
+                .button(format!(
+                    "LT: {}",
+                    if lt_capturing {
+                        "press key..."
+                    } else {
+                        &lt_key
+                    }
+                ))
+                .clicked()
+            {
                 self.send(ClientCommand::StartBindingCapture {
                     slot: self.selected_slot,
                     action: ControllerAction::Trigger(Trigger::Left),
                 });
             }
-            if ui.button(format!("RT: {}", if rt_capturing { "press key..." } else { &rt_key })).clicked() {
+            if ui
+                .button(format!(
+                    "RT: {}",
+                    if rt_capturing {
+                        "press key..."
+                    } else {
+                        &rt_key
+                    }
+                ))
+                .clicked()
+            {
                 self.send(ClientCommand::StartBindingCapture {
                     slot: self.selected_slot,
                     action: ControllerAction::Trigger(Trigger::Right),
@@ -449,22 +610,62 @@ impl KbdSplitApp {
         ui.label(RichText::new("Thumb Stick Buttons").strong());
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            let ls_key = binding_map.get(&ControllerAction::Button(GamepadButton::LeftThumb)).cloned().unwrap_or_default();
-            let rs_key = binding_map.get(&ControllerAction::Button(GamepadButton::RightThumb)).cloned().unwrap_or_default();
-            let ls_capturing = capture_action.as_ref().map(|a| {
-                if let ControllerAction::Button(b) = a { *b == GamepadButton::LeftThumb } else { false }
-            }).unwrap_or(false);
-            let rs_capturing = capture_action.as_ref().map(|a| {
-                if let ControllerAction::Button(b) = a { *b == GamepadButton::RightThumb } else { false }
-            }).unwrap_or(false);
+            let ls_key = binding_map
+                .get(&ControllerAction::Button(GamepadButton::LeftThumb))
+                .cloned()
+                .unwrap_or_default();
+            let rs_key = binding_map
+                .get(&ControllerAction::Button(GamepadButton::RightThumb))
+                .cloned()
+                .unwrap_or_default();
+            let ls_capturing = capture_action
+                .as_ref()
+                .map(|a| {
+                    if let ControllerAction::Button(b) = a {
+                        *b == GamepadButton::LeftThumb
+                    } else {
+                        false
+                    }
+                })
+                .unwrap_or(false);
+            let rs_capturing = capture_action
+                .as_ref()
+                .map(|a| {
+                    if let ControllerAction::Button(b) = a {
+                        *b == GamepadButton::RightThumb
+                    } else {
+                        false
+                    }
+                })
+                .unwrap_or(false);
 
-            if ui.button(format!("LS: {}", if ls_capturing { "press key..." } else { &ls_key })).clicked() {
+            if ui
+                .button(format!(
+                    "LS: {}",
+                    if ls_capturing {
+                        "press key..."
+                    } else {
+                        &ls_key
+                    }
+                ))
+                .clicked()
+            {
                 self.send(ClientCommand::StartBindingCapture {
                     slot: self.selected_slot,
                     action: ControllerAction::Button(GamepadButton::LeftThumb),
                 });
             }
-            if ui.button(format!("RS: {}", if rs_capturing { "press key..." } else { &rs_key })).clicked() {
+            if ui
+                .button(format!(
+                    "RS: {}",
+                    if rs_capturing {
+                        "press key..."
+                    } else {
+                        &rs_key
+                    }
+                ))
+                .clicked()
+            {
                 self.send(ClientCommand::StartBindingCapture {
                     slot: self.selected_slot,
                     action: ControllerAction::Button(GamepadButton::RightThumb),
@@ -482,12 +683,29 @@ impl KbdSplitApp {
             (GamepadButton::DpadLeft, "Left"),
             (GamepadButton::DpadRight, "Right"),
         ] {
-            let key = binding_map.get(&ControllerAction::Button(button)).cloned().unwrap_or_default();
-            let is_capturing = capture_action.as_ref().map(|a| {
-                if let ControllerAction::Button(b) = a { *b == button } else { false }
-            }).unwrap_or(false);
+            let key = binding_map
+                .get(&ControllerAction::Button(button))
+                .cloned()
+                .unwrap_or_default();
+            let is_capturing = capture_action
+                .as_ref()
+                .map(|a| {
+                    if let ControllerAction::Button(b) = a {
+                        *b == button
+                    } else {
+                        false
+                    }
+                })
+                .unwrap_or(false);
 
-            if ui.button(format!("D-{}: {}", name, if is_capturing { "press key..." } else { &key })).clicked() {
+            if ui
+                .button(format!(
+                    "D-{}: {}",
+                    name,
+                    if is_capturing { "press key..." } else { &key }
+                ))
+                .clicked()
+            {
                 self.send(ClientCommand::StartBindingCapture {
                     slot: self.selected_slot,
                     action: ControllerAction::Button(button),
@@ -505,17 +723,38 @@ impl KbdSplitApp {
             (Direction::Left, "Left"),
             (Direction::Right, "Right"),
         ] {
-            let key = binding_map.get(&ControllerAction::Stick { stick: Stick::Left, direction: dir }).cloned().unwrap_or_default();
-            let is_capturing = capture_action.as_ref().map(|a| {
-                if let ControllerAction::Stick { stick, direction } = a {
-                    *stick == Stick::Left && *direction == dir
-                } else { false }
-            }).unwrap_or(false);
+            let key = binding_map
+                .get(&ControllerAction::Stick {
+                    stick: Stick::Left,
+                    direction: dir,
+                })
+                .cloned()
+                .unwrap_or_default();
+            let is_capturing = capture_action
+                .as_ref()
+                .map(|a| {
+                    if let ControllerAction::Stick { stick, direction } = a {
+                        *stick == Stick::Left && *direction == dir
+                    } else {
+                        false
+                    }
+                })
+                .unwrap_or(false);
 
-            if ui.button(format!("L-{}: {}", name, if is_capturing { "press key..." } else { &key })).clicked() {
+            if ui
+                .button(format!(
+                    "L-{}: {}",
+                    name,
+                    if is_capturing { "press key..." } else { &key }
+                ))
+                .clicked()
+            {
                 self.send(ClientCommand::StartBindingCapture {
                     slot: self.selected_slot,
-                    action: ControllerAction::Stick { stick: Stick::Left, direction: dir },
+                    action: ControllerAction::Stick {
+                        stick: Stick::Left,
+                        direction: dir,
+                    },
                 });
             }
         }
@@ -530,17 +769,38 @@ impl KbdSplitApp {
             (Direction::Left, "Left"),
             (Direction::Right, "Right"),
         ] {
-            let key = binding_map.get(&ControllerAction::Stick { stick: Stick::Right, direction: dir }).cloned().unwrap_or_default();
-            let is_capturing = capture_action.as_ref().map(|a| {
-                if let ControllerAction::Stick { stick, direction } = a {
-                    *stick == Stick::Right && *direction == dir
-                } else { false }
-            }).unwrap_or(false);
+            let key = binding_map
+                .get(&ControllerAction::Stick {
+                    stick: Stick::Right,
+                    direction: dir,
+                })
+                .cloned()
+                .unwrap_or_default();
+            let is_capturing = capture_action
+                .as_ref()
+                .map(|a| {
+                    if let ControllerAction::Stick { stick, direction } = a {
+                        *stick == Stick::Right && *direction == dir
+                    } else {
+                        false
+                    }
+                })
+                .unwrap_or(false);
 
-            if ui.button(format!("R-{}: {}", name, if is_capturing { "press key..." } else { &key })).clicked() {
+            if ui
+                .button(format!(
+                    "R-{}: {}",
+                    name,
+                    if is_capturing { "press key..." } else { &key }
+                ))
+                .clicked()
+            {
                 self.send(ClientCommand::StartBindingCapture {
                     slot: self.selected_slot,
-                    action: ControllerAction::Stick { stick: Stick::Right, direction: dir },
+                    action: ControllerAction::Stick {
+                        stick: Stick::Right,
+                        direction: dir,
+                    },
                 });
             }
         }
@@ -758,10 +1018,38 @@ fn draw_controller(painter: &Painter, rect: Rect, state: &ControllerState) {
 
     // Face buttons - Y, B, A, X
     let face_center = Pos2::new(body.left() + width * 0.72, body.top() + height * 0.42);
-    draw_button(painter, face_center + Vec2::new(0.0, -height * 0.09), "Y", state, GamepadButton::North, active);
-    draw_button(painter, face_center + Vec2::new(width * 0.06, 0.0), "B", state, GamepadButton::East, active);
-    draw_button(painter, face_center + Vec2::new(0.0, height * 0.09), "A", state, GamepadButton::South, active);
-    draw_button(painter, face_center + Vec2::new(-width * 0.06, 0.0), "X", state, GamepadButton::West, active);
+    draw_button(
+        painter,
+        face_center + Vec2::new(0.0, -height * 0.09),
+        "Y",
+        state,
+        GamepadButton::North,
+        active,
+    );
+    draw_button(
+        painter,
+        face_center + Vec2::new(width * 0.06, 0.0),
+        "B",
+        state,
+        GamepadButton::East,
+        active,
+    );
+    draw_button(
+        painter,
+        face_center + Vec2::new(0.0, height * 0.09),
+        "A",
+        state,
+        GamepadButton::South,
+        active,
+    );
+    draw_button(
+        painter,
+        face_center + Vec2::new(-width * 0.06, 0.0),
+        "X",
+        state,
+        GamepadButton::West,
+        active,
+    );
 
     // Menu buttons
     draw_small_button(
