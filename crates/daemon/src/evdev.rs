@@ -76,9 +76,12 @@ impl InputReader {
             events: libc::EPOLLIN as u32,
             u64: 0,
         };
-        if unsafe { libc::epoll_ctl(epoll_fd, libc::EPOLL_CTL_ADD, file.as_raw_fd(), &mut ev) } < 0 {
+        if unsafe { libc::epoll_ctl(epoll_fd, libc::EPOLL_CTL_ADD, file.as_raw_fd(), &mut ev) } < 0
+        {
             let err = std::io::Error::last_os_error();
-            unsafe { libc::close(epoll_fd); }
+            unsafe {
+                libc::close(epoll_fd);
+            }
             anyhow::bail!("epoll_ctl add failed: {err}");
         }
 
@@ -149,7 +152,9 @@ impl Drop for InputReader {
         if self.grabbed {
             let _ = ioctl_eviocgrab(self.file.as_raw_fd(), false);
         }
-        unsafe { libc::close(self.epoll_fd); }
+        unsafe {
+            libc::close(self.epoll_fd);
+        }
     }
 }
 
@@ -220,11 +225,7 @@ fn inspect_keyboard(path: &Path) -> Result<Option<KeyboardDevice>> {
         phys.contains("isa") || phys.contains("i8042") || phys.contains("serio")
     });
 
-    let can_grab = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(path)
-        .is_ok();
+    let can_grab = OpenOptions::new().read(true).write(true).open(path).is_ok();
 
     Ok(Some(KeyboardDevice {
         id: device_id,

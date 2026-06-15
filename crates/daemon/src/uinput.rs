@@ -130,7 +130,9 @@ impl VirtualGamepad {
         for button in GamepadButton::ALL {
             ioctl_set_bit(file.as_raw_fd(), ui_set_keybit(), button_code(button))?;
         }
-        for axis in [ABS_X, ABS_Y, ABS_RX, ABS_RY, ABS_Z, ABS_RZ, ABS_HAT0X, ABS_HAT0Y] {
+        for axis in [
+            ABS_X, ABS_Y, ABS_RX, ABS_RY, ABS_Z, ABS_RZ, ABS_HAT0X, ABS_HAT0Y,
+        ] {
             ioctl_set_bit(file.as_raw_fd(), ui_set_absbit(), axis)?;
         }
 
@@ -172,9 +174,17 @@ impl VirtualGamepad {
 
     /// Current realtime clock as a uinput event timestamp.
     pub fn now() -> libc::timeval {
-        let mut ts = libc::timespec { tv_sec: 0, tv_nsec: 0 };
-        unsafe { libc::clock_gettime(libc::CLOCK_REALTIME, &mut ts); }
-        libc::timeval { tv_sec: ts.tv_sec, tv_usec: (ts.tv_nsec / 1000) as _ }
+        let mut ts = libc::timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        };
+        unsafe {
+            libc::clock_gettime(libc::CLOCK_REALTIME, &mut ts);
+        }
+        libc::timeval {
+            tv_sec: ts.tv_sec,
+            tv_usec: (ts.tv_nsec / 1000) as _,
+        }
     }
 
     /// Emit all state changes in a single batched write to /dev/uinput.
@@ -193,10 +203,7 @@ impl VirtualGamepad {
                     value: $value,
                 };
                 let src = unsafe {
-                    std::slice::from_raw_parts(
-                        (&ev as *const InputEvent).cast::<u8>(),
-                        EVENT_SIZE,
-                    )
+                    std::slice::from_raw_parts((&ev as *const InputEvent).cast::<u8>(), EVENT_SIZE)
                 };
                 let offset = count * EVENT_SIZE;
                 batch[offset..offset + EVENT_SIZE].copy_from_slice(src);
@@ -231,12 +238,36 @@ impl VirtualGamepad {
                 }
             };
         }
-        push_axis_if!(ABS_X, self.last.axes.left_x as i32, state.axes.left_x as i32);
-        push_axis_if!(ABS_Y, self.last.axes.left_y as i32, state.axes.left_y as i32);
-        push_axis_if!(ABS_RX, self.last.axes.right_x as i32, state.axes.right_x as i32);
-        push_axis_if!(ABS_RY, self.last.axes.right_y as i32, state.axes.right_y as i32);
-        push_axis_if!(ABS_Z, self.last.axes.left_trigger as i32, state.axes.left_trigger as i32);
-        push_axis_if!(ABS_RZ, self.last.axes.right_trigger as i32, state.axes.right_trigger as i32);
+        push_axis_if!(
+            ABS_X,
+            self.last.axes.left_x as i32,
+            state.axes.left_x as i32
+        );
+        push_axis_if!(
+            ABS_Y,
+            self.last.axes.left_y as i32,
+            state.axes.left_y as i32
+        );
+        push_axis_if!(
+            ABS_RX,
+            self.last.axes.right_x as i32,
+            state.axes.right_x as i32
+        );
+        push_axis_if!(
+            ABS_RY,
+            self.last.axes.right_y as i32,
+            state.axes.right_y as i32
+        );
+        push_axis_if!(
+            ABS_Z,
+            self.last.axes.left_trigger as i32,
+            state.axes.left_trigger as i32
+        );
+        push_axis_if!(
+            ABS_RZ,
+            self.last.axes.right_trigger as i32,
+            state.axes.right_trigger as i32
+        );
 
         if count > 0 {
             push_event!(EV_SYN, SYN_REPORT, 0);
@@ -255,7 +286,8 @@ impl Drop for VirtualGamepad {
     fn drop(&mut self) {
         if let Err(err) = ioctl_simple(self.file.as_raw_fd(), ui_dev_destroy()) {
             // ENODEV means the kernel already cleaned up on FD close — expected.
-            if let Some(errno) = err.downcast_ref::<std::io::Error>()
+            if let Some(errno) = err
+                .downcast_ref::<std::io::Error>()
                 .and_then(|e| e.raw_os_error())
                 && errno != libc::ENODEV
             {

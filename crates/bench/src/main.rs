@@ -76,7 +76,10 @@ fn main() -> Result<()> {
     let throughput = batch_size as f64 / elapsed.as_secs_f64();
     println!("--- Throughput (batched writes, {batch_size} events) ---");
     println!("  {throughput:.0} events/sec");
-    println!("  {:.1} us/event", elapsed.as_secs_f64() * 1_000_000.0 / batch_size as f64);
+    println!(
+        "  {:.1} us/event",
+        elapsed.as_secs_f64() * 1_000_000.0 / batch_size as f64
+    );
     println!();
 
     // --- Jitter (coefficient of variation) ---

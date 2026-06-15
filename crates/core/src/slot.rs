@@ -1,6 +1,6 @@
 use kbdsplit_shared::{
-    ControllerAction, ControllerSlot, ControllerState, Direction,
-    KeyBinding, KeyCode, SlotLifecycle, SlotStatus, Stick, Trigger,
+    ControllerAction, ControllerSlot, ControllerState, Direction, KeyBinding, KeyCode,
+    SlotLifecycle, SlotStatus, Stick, Trigger,
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -50,7 +50,11 @@ impl RuntimeSlot {
         let Some(stored_action) = self.held_keys.remove(&key_code) else {
             return false;
         };
-        decrement_action(&mut self.action_refcount, &mut self.status.state, stored_action);
+        decrement_action(
+            &mut self.action_refcount,
+            &mut self.status.state,
+            stored_action,
+        );
         self.update_lifecycle();
         true
     }
@@ -77,7 +81,10 @@ impl RuntimeSlot {
         let mut physical: BTreeSet<KeyCode> = BTreeSet::new();
         for binding in bindings {
             let bit = binding.key.0 as usize;
-            if bitmap.get(bit / 8).is_some_and(|byte| byte & (1 << (bit % 8)) != 0) {
+            if bitmap
+                .get(bit / 8)
+                .is_some_and(|byte| byte & (1 << (bit % 8)) != 0)
+            {
                 physical.insert(binding.key);
             }
         }
@@ -115,13 +122,25 @@ impl RuntimeSlot {
         for (key_code, old_action) in &current {
             match new_bindings.iter().find(|b| b.key == *key_code) {
                 Some(binding) if binding.action != *old_action => {
-                    decrement_action(&mut self.action_refcount, &mut self.status.state, *old_action);
-                    increment_action(&mut self.action_refcount, &mut self.status.state, binding.action);
+                    decrement_action(
+                        &mut self.action_refcount,
+                        &mut self.status.state,
+                        *old_action,
+                    );
+                    increment_action(
+                        &mut self.action_refcount,
+                        &mut self.status.state,
+                        binding.action,
+                    );
                     self.held_keys.insert(*key_code, binding.action);
                 }
                 None => {
                     self.held_keys.remove(key_code);
-                    decrement_action(&mut self.action_refcount, &mut self.status.state, *old_action);
+                    decrement_action(
+                        &mut self.action_refcount,
+                        &mut self.status.state,
+                        *old_action,
+                    );
                 }
                 _ => {}
             }

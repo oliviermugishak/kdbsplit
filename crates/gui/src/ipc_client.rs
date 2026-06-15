@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use kbdsplit_shared::{ClientCommand, ServerMessage, decode_message, encode_message};
 use std::io::{Read, Write};
-use std::os::unix::net::UnixStream;
 use std::os::unix::fs::PermissionsExt;
+use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
