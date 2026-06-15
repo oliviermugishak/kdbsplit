@@ -3,7 +3,8 @@ set -euo pipefail
 
 BIN_DIR="/usr/local/bin"
 DESKTOP_FILE="/usr/local/share/applications/dev.kbdsplit.KbdSplit.desktop"
-ICON_FILE="/usr/local/share/icons/hicolor/scalable/apps/dev.kbdsplit.KbdSplit.svg"
+ICON_SVG="/usr/local/share/icons/hicolor/scalable/apps/dev.kbdsplit.KbdSplit.svg"
+ICON_PNG="/usr/local/share/icons/hicolor/128x128/apps/dev.kbdsplit.KbdSplit.png"
 UDEV_RULE="/etc/udev/rules.d/70-kbdsplit.rules"
 SYSTEMD_UNIT="/etc/systemd/system/kbdsplitd.service"
 SOCKET="/tmp/kbdsplit.sock"
@@ -65,7 +66,7 @@ main() {
   echo "Removing installed files"
   as_root rm -f "$BIN_DIR/kbdsplitd" "$BIN_DIR/kbdsplit-gui"
   as_root rm -f "$DESKTOP_FILE"
-  as_root rm -f "$ICON_FILE"
+  as_root rm -f "$ICON_SVG" "$ICON_PNG"
   as_root rm -f "$UDEV_RULE"
   rm -f "$SOCKET"
 

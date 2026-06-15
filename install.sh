@@ -44,13 +44,19 @@ as_root() {
 }
 
 install_icon() {
-  local dir="$ICON_DIR"
-  local src="$REPO_DIR/assets/icon.svg"
-  local dst="$dir/dev.kbdsplit.KbdSplit.svg"
-  if [[ -f "$src" ]]; then
-    echo "Installing app icon"
+  local svg_src="$REPO_DIR/assets/icon.svg"
+  local png_src="$REPO_DIR/assets/icon.png"
+  if [[ -f "$svg_src" ]]; then
+    local dir="$ICON_DIR"
+    echo "Installing app icon (SVG)"
     as_root install -d -m 0755 "$dir"
-    as_root install -m 0644 "$src" "$dst"
+    as_root install -m 0644 "$svg_src" "$dir/dev.kbdsplit.KbdSplit.svg"
+  fi
+  if [[ -f "$png_src" ]]; then
+    local dir="/usr/local/share/icons/hicolor/128x128/apps"
+    echo "Installing app icon (PNG)"
+    as_root install -d -m 0755 "$dir"
+    as_root install -m 0644 "$png_src" "$dir/dev.kbdsplit.KbdSplit.png"
   fi
 }
 
