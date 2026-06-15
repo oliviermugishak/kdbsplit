@@ -70,6 +70,14 @@ main() {
   as_root rm -f "$UDEV_RULE"
   rm -f "$SOCKET"
 
+  # Remove user home desktop files
+  local user_home
+  user_home="$(getent passwd "$INSTALL_USER" | cut -d: -f6)"
+  if [[ -n "$user_home" ]] && [[ -d "$user_home" ]]; then
+    rm -f "$user_home/KbdSplit.desktop"
+    rm -f "$user_home/.local/share/applications/dev.kbdsplit.KbdSplit.desktop"
+  fi
+
   if command -v udevadm >/dev/null 2>&1; then
     echo "Reloading udev rules"
     as_root udevadm control --reload-rules || true

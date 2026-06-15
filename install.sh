@@ -45,6 +45,14 @@ as_root() {
   fi
 }
 
+as_user() {
+  if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+    sudo -u "$INSTALL_USER" "$@"
+  else
+    "$@"
+  fi
+}
+
 install_icon() {
   local svg_src="$REPO_DIR/assets/icon.svg"
   local png_src="$REPO_DIR/assets/icon.png"
@@ -137,6 +145,21 @@ main() {
   as_root install -m 0644 \
     "$REPO_DIR/packaging/desktop/dev.kbdsplit.KbdSplit.desktop" \
     "$DESKTOP_DIR/dev.kbdsplit.KbdSplit.desktop"
+
+  # Place desktop file in user home for Omarchy desktop view
+  local user_home
+  user_home="$(getent passwd "$INSTALL_USER" | cut -d: -f6)"
+  if [[ -n "$user_home" ]] && [[ -d "$user_home" ]]; then
+    echo "Installing desktop shortcut in $user_home"
+    as_user install -m 0644 \
+      "$REPO_DIR/packaging/desktop/dev.kbdsplit.KbdSplit.desktop" \
+      "$user_home/KbdSplit.desktop"
+
+    as_user mkdir -p "$user_home/.local/share/applications"
+    as_user install -m 0644 \
+      "$REPO_DIR/packaging/desktop/dev.kbdsplit.KbdSplit.desktop" \
+      "$user_home/.local/share/applications/dev.kbdsplit.KbdSplit.desktop"
+  fi
 
   install_icon
 
