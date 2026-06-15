@@ -25,6 +25,7 @@ jobs:
         cp install.sh dist/
         cp uninstall.sh dist/
         cp -r packaging dist/
+        cp -r assets dist/
         cp README.md dist/
         cp LICENSE dist/
         cd dist && tar czf ../kbdsplit-${{ github.ref_name }}.tar.gz .
