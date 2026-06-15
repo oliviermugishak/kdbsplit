@@ -228,7 +228,7 @@ impl Daemon {
                     }
                 };
                 if let Some(mut output) = output {
-                    output.emit_state(&current)?;
+                    output.emit_state(&current, VirtualGamepad::now())?;
                     let mut state = self.state.lock();
                     state.outputs.insert(slot, output);
                 }
@@ -788,7 +788,7 @@ fn reader_loop(state: Arc<Mutex<DaemonState>>, device_id: DeviceId) {
                         state.lock().release_all_locks();
                         return;
                     }
-                    handle_key_event(&state, current_slot, event.code, pressed);
+                    handle_key_event(&state, current_slot, event.code, pressed, event.time);
                 } else if event.type_ == EV_SYN && event.code == SYN_DROPPED {
                     handle_syn_dropped(&state, &mut reader, current_slot);
                 }
@@ -820,6 +820,7 @@ fn handle_key_event(
     slot: ControllerSlot,
     key_code: u16,
     pressed: bool,
+    timestamp: libc::timeval,
 ) {
     // Phase 1: Lock — update state, extract output
     let (current, mut output) = {
@@ -890,7 +891,7 @@ fn handle_key_event(
     };
 
     // Phase 2: Emit WITHOUT the lock — this is the longest syscall
-    let result = output.emit_state(&current);
+    let result = output.emit_state(&current, timestamp);
 
     // Phase 3: Re-lock for error recovery and to put output back
     let mut s = state.lock();
@@ -959,7 +960,7 @@ fn handle_syn_dropped(
     };
 
     // Phase 2: Emit WITHOUT the lock
-    let result = output.emit_state(&current);
+    let result = output.emit_state(&current, VirtualGamepad::now());
 
     // Phase 3: Re-lock for error recovery and to put output back
     let mut s = state.lock();

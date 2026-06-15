@@ -170,15 +170,24 @@ impl VirtualGamepad {
         })
     }
 
+    /// Current realtime clock as a uinput event timestamp.
+    pub fn now() -> libc::timeval {
+        let mut ts = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+        unsafe { libc::clock_gettime(libc::CLOCK_REALTIME, &mut ts); }
+        libc::timeval { tv_sec: ts.tv_sec, tv_usec: (ts.tv_nsec / 1000) as _ }
+    }
+
     /// Emit all state changes in a single batched write to /dev/uinput.
-    pub fn emit_state(&mut self, state: &ControllerState) -> Result<()> {
+    /// `time` should be the original evdev event timestamp for keyboard-driven
+    /// emits, or `VirtualGamepad::now()` for synthetic events.
+    pub fn emit_state(&mut self, state: &ControllerState, time: libc::timeval) -> Result<()> {
         let mut batch: [u8; MAX_BATCH_EVENTS * EVENT_SIZE] = [0; MAX_BATCH_EVENTS * EVENT_SIZE];
         let mut count = 0;
 
         macro_rules! push_event {
             ($type_:expr, $code:expr, $value:expr) => {{
                 let ev = InputEvent {
-                    time: libc::timeval { tv_sec: 0, tv_usec: 0 },
+                    time,
                     type_: $type_,
                     code: $code,
                     value: $value,
