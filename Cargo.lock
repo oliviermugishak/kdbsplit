@@ -1118,7 +1118,7 @@ dependencies = [
 
 [[package]]
 name = "kbdsplit-bench"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "kbdsplit-core",
@@ -1128,7 +1128,7 @@ dependencies = [
 
 [[package]]
 name = "kbdsplit-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "directories",
@@ -1142,7 +1142,7 @@ dependencies = [
 
 [[package]]
 name = "kbdsplit-daemon"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "kbdsplit-core",
@@ -1155,7 +1155,7 @@ dependencies = [
 
 [[package]]
 name = "kbdsplit-gui"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "eframe",
@@ -1166,7 +1166,7 @@ dependencies = [
 
 [[package]]
 name = "kbdsplit-shared"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",

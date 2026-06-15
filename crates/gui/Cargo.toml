@@ -1,6 +1,6 @@
 [package]
 name = "kbdsplit-gui"
-version = "0.1.0"
+version = "0.2.0"
 description = "KbdSplit egui frontend — assign keyboards, edit bindings, manage profiles"
 edition.workspace = true
 license.workspace = true
