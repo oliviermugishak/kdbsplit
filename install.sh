@@ -18,12 +18,14 @@ Install $APP_NAME.
 
 Usage:
   ./install.sh [--debug] [--no-build] [--no-input-group] [--with-systemd]
+  ./install.sh --uninstall
 
 Options:
   --debug           Install debug binaries from target/debug.
   --no-build        Do not run cargo build before installing.
   --no-input-group  Do not add the current user to the input group.
   --with-systemd    Install and enable kbdsplitd as a systemd service.
+  -u, --uninstall   Uninstall (delegates to uninstall.sh).
   -h, --help        Show this help.
 EOF
 }
@@ -91,6 +93,9 @@ main() {
         ;;
       --with-systemd)
         with_systemd=1
+        ;;
+      -u|--uninstall)
+        exec "$REPO_DIR/uninstall.sh" "${@:2}"
         ;;
       -h|--help)
         usage
